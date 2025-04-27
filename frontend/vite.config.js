@@ -7,7 +7,7 @@ export default defineConfig({
 	server: {
 		proxy: {
 			"/api": {
-				target: "https://ecommerce-u1pz.vercel.app",
+				target: "http://localhost:5000",
 			},
 		},
 	},
