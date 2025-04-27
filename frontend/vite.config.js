@@ -7,7 +7,7 @@ export default defineConfig({
 	server: {
 		proxy: {
 			"/api": {
-				target: "https://ricarts.vercel.app/",
+				target: "https://ecommerce-u1pz.vercel.app",
 			},
 		},
 	},
