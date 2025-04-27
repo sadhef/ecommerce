@@ -53,20 +53,20 @@ const Navbar = () => {
 
 						{user ? (
 							<button
-								className='bg-gray-700 hover:bg-gray-600 text-white py-1 px-4 
+								className='bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 
 								rounded-md flex items-center transition duration-300 ease-in-out'
 								onClick={logout}
 							>
 								<LogOut size={18} />
-								<span className='ml-2'>Log Out</span>
+								<span className='hidden sm:inline ml-2'>Log Out</span>
 							</button>
 						) : (
 							<>
 								<Link
 									to={"/signup"}
 									className='bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 
-									text-white py-1 px-4 rounded-lg flex items-center transition duration-300 ease-in-out 
-									shadow-lg hover:shadow-pink-500/30'
+									text-white py-2 px-4 rounded-lg flex items-center transition duration-300 ease-in-out 
+									shadow-lg hover:shadow-pink-500/30 transform hover:-translate-y-1'
 								>
 									<UserPlus className='mr-2' size={18} />
 									Sign Up
@@ -74,8 +74,8 @@ const Navbar = () => {
 								<Link
 									to={"/login"}
 									className='bg-transparent border-2 border-pink-500 text-pink-400 hover:bg-pink-500/10 
-									py-1 px-4 rounded-lg flex items-center transition duration-300 ease-in-out 
-									hover:text-pink-300 hover:border-pink-400'
+									py-2 px-4 rounded-lg flex items-center transition duration-300 ease-in-out 
+									hover:text-pink-300 hover:border-pink-400 transform hover:-translate-y-1'
 								>
 									<LogIn className='mr-2' size={18} />
 									Login
