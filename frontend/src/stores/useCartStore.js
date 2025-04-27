@@ -8,6 +8,8 @@ export const useCartStore = create((set, get) => ({
   total: 0,
   subtotal: 0,
   isCouponApplied: false,
+  error: null,
+  loading: false,
 
   getMyCoupon: async () => {
     try {
@@ -40,15 +42,45 @@ export const useCartStore = create((set, get) => ({
   },
 
   getCartItems: async () => {
+    set({ loading: true, error: null });
     try {
       const res = await axios.get("/cart");
-      // Ensure res and res.data exist and set empty array as fallback
-      const cartItems = res && res.data ? res.data : [];
-      set({ cart: cartItems });
-      get().calculateTotals();
+      
+      // Check if response is valid
+      if (res && res.data) {
+        set({ 
+          cart: Array.isArray(res.data) ? res.data : [], 
+          loading: false,
+          error: null
+        });
+        get().calculateTotals();
+      } else {
+        // Handle empty response
+        set({ 
+          cart: [], 
+          loading: false,
+          error: null
+        });
+        get().calculateTotals();
+      }
     } catch (error) {
-      set({ cart: [] });
-      toast.error(error.response?.data?.message || "An error occurred loading cart");
+      console.error("Cart loading error:", error);
+      
+      // Provide more specific error messages based on error type
+      const errorMessage = error.response?.status === 401 
+        ? "Please log in to view your cart" 
+        : error.response?.data?.message || "An error occurred loading cart";
+      
+      set({ 
+        cart: [], 
+        loading: false, 
+        error: errorMessage 
+      });
+      
+      // Only show toast for network errors, not for auth issues
+      if (error.response?.status !== 401) {
+        toast.error(errorMessage);
+      }
     }
   },
   
@@ -72,7 +104,7 @@ export const useCartStore = create((set, get) => ({
       });
       get().calculateTotals();
     } catch (error) {
-      toast.error(error.response?.data?.message || "An error occurred");
+      toast.error(error.response?.data?.message || "An error occurred adding to cart");
     }
   },
   

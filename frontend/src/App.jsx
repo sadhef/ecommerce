@@ -9,7 +9,7 @@ import CategoryPage from "./pages/CategoryPage";
 import Navbar from "./components/Navbar";
 import { Toaster } from "react-hot-toast";
 import { useUserStore } from "./stores/useUserStore";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import LoadingSpinner from "./components/LoadingSpinner";
 import CartPage from "./pages/CartPage";
 import { useCartStore } from "./stores/useCartStore";
@@ -19,15 +19,31 @@ import PurchaseCancelPage from "./pages/PurchaseCancelPage";
 function App() {
 	const { user, checkAuth, checkingAuth } = useUserStore();
 	const { getCartItems } = useCartStore();
+	const [cartLoaded, setCartLoaded] = useState(false);
+
+	// First, check if the user is authenticated
 	useEffect(() => {
 		checkAuth();
 	}, [checkAuth]);
 
+	// Once authentication is complete and we have a user, load their cart
 	useEffect(() => {
-		if (!user) return;
-
-		getCartItems();
-	}, [getCartItems, user]);
+		if (checkingAuth) return; // Don't do anything while still checking auth
+		
+		if (user && !cartLoaded) {
+			// Add a small delay to ensure auth is fully processed
+			const timer = setTimeout(() => {
+				getCartItems()
+					.then(() => setCartLoaded(true))
+					.catch(err => console.error("Error loading cart:", err));
+			}, 500);
+			
+			return () => clearTimeout(timer);
+		} else if (!user) {
+			// Reset cart loaded state when user logs out
+			setCartLoaded(false);
+		}
+	}, [user, getCartItems, checkingAuth, cartLoaded]);
 
 	if (checkingAuth) return <LoadingSpinner />;
 
@@ -59,7 +75,7 @@ function App() {
 					<Route path='/purchase-cancel' element={user ? <PurchaseCancelPage /> : <Navigate to='/login' />} />
 				</Routes>
 			</div>
-			<Toaster />
+			<Toaster position="top-center" />
 		</div>
 	);
 }

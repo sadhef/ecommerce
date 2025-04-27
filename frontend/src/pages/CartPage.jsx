@@ -6,9 +6,47 @@ import CartItem from "../components/CartItem";
 import PeopleAlsoBought from "../components/PeopleAlsoBought";
 import OrderSummary from "../components/OrderSummary";
 import GiftCouponCard from "../components/GiftCouponCard";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 const CartPage = () => {
-	const { cart } = useCartStore();
+	const { cart, loading, error, getCartItems } = useCartStore();
+
+	// Add a retry option if there was an error loading the cart
+	const handleRetry = () => {
+		getCartItems();
+	};
+
+	if (loading) {
+		return (
+			<div className="min-h-screen flex items-center justify-center">
+				<LoadingSpinner />
+			</div>
+		);
+	}
+
+	if (error) {
+		return (
+			<div className="min-h-screen flex flex-col items-center justify-center p-4">
+				<div className="bg-gray-800/80 backdrop-blur-md p-8 rounded-2xl shadow-xl border border-gray-700 max-w-md text-center">
+					<div className="text-red-400 text-6xl mb-4">⚠️</div>
+					<h2 className="text-2xl font-bold text-white mb-4">Unable to Load Cart</h2>
+					<p className="text-gray-300 mb-6">{error}</p>
+					<button 
+						onClick={handleRetry}
+						className="bg-pink-600 hover:bg-pink-700 text-white py-2 px-6 rounded-lg transition"
+					>
+						Retry
+					</button>
+					<Link 
+						to="/"
+						className="block mt-4 text-pink-400 hover:text-pink-300"
+					>
+						Return to Home
+					</Link>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className='relative py-8 md:py-16'>
