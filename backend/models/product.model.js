@@ -17,7 +17,7 @@ const productSchema = new mongoose.Schema(
 		},
 		image: {
 			type: String,
-			required: false, // Changed from required: true to allow products without images
+			required: [true, "Image is required"],
 		},
 		category: {
 			type: String,

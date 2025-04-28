@@ -41,29 +41,29 @@ const AnalyticsTab = () => {
 					title='Total Users'
 					value={analyticsData.users.toLocaleString()}
 					icon={Users}
-					color='from-[#FF6B9C] to-[#E84D8A]'
+					color='from-emerald-500 to-teal-700'
 				/>
 				<AnalyticsCard
 					title='Total Products'
 					value={analyticsData.products.toLocaleString()}
 					icon={Package}
-					color='from-[#FF6B9C] to-[#FF90B6]'
+					color='from-emerald-500 to-green-700'
 				/>
 				<AnalyticsCard
 					title='Total Sales'
 					value={analyticsData.totalSales.toLocaleString()}
 					icon={ShoppingCart}
-					color='from-[#FF6B9C] to-[#FFA5C3]'
+					color='from-emerald-500 to-cyan-700'
 				/>
 				<AnalyticsCard
 					title='Total Revenue'
 					value={`$${analyticsData.totalRevenue.toLocaleString()}`}
 					icon={DollarSign}
-					color='from-[#FF6B9C] to-[#FFC1D6]'
+					color='from-emerald-500 to-lime-700'
 				/>
 			</div>
 			<motion.div
-				className='bg-[#3D2A33]/60 rounded-lg p-6 shadow-lg'
+				className='bg-gray-800/60 rounded-lg p-6 shadow-lg'
 				initial={{ opacity: 0, y: 20 }}
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.5, delay: 0.25 }}
@@ -71,16 +71,16 @@ const AnalyticsTab = () => {
 				<ResponsiveContainer width='100%' height={400}>
 					<LineChart data={dailySalesData}>
 						<CartesianGrid strokeDasharray='3 3' />
-						<XAxis dataKey='name' stroke='#FFD6E5' />
-						<YAxis yAxisId='left' stroke='#FFD6E5' />
-						<YAxis yAxisId='right' orientation='right' stroke='#FFD6E5' />
-						<Tooltip contentStyle={{ backgroundColor: '#3D2A33', borderColor: '#FF6B9C' }} />
+						<XAxis dataKey='name' stroke='#D1D5DB' />
+						<YAxis yAxisId='left' stroke='#D1D5DB' />
+						<YAxis yAxisId='right' orientation='right' stroke='#D1D5DB' />
+						<Tooltip />
 						<Legend />
 						<Line
 							yAxisId='left'
 							type='monotone'
 							dataKey='sales'
-							stroke='#FF6B9C'
+							stroke='#10B981'
 							activeDot={{ r: 8 }}
 							name='Sales'
 						/>
@@ -88,7 +88,7 @@ const AnalyticsTab = () => {
 							yAxisId='right'
 							type='monotone'
 							dataKey='revenue'
-							stroke='#FFA5C3'
+							stroke='#3B82F6'
 							activeDot={{ r: 8 }}
 							name='Revenue'
 						/>
@@ -102,19 +102,19 @@ export default AnalyticsTab;
 
 const AnalyticsCard = ({ title, value, icon: Icon, color }) => (
 	<motion.div
-		className={`bg-[#3D2A33] rounded-lg p-6 shadow-lg overflow-hidden relative ${color}`}
+		className={`bg-gray-800 rounded-lg p-6 shadow-lg overflow-hidden relative ${color}`}
 		initial={{ opacity: 0, y: 20 }}
 		animate={{ opacity: 1, y: 0 }}
 		transition={{ duration: 0.5 }}
 	>
 		<div className='flex justify-between items-center'>
 			<div className='z-10'>
-				<p className='text-pink-100 text-sm mb-1 font-semibold'>{title}</p>
+				<p className='text-emerald-300 text-sm mb-1 font-semibold'>{title}</p>
 				<h3 className='text-white text-3xl font-bold'>{value}</h3>
 			</div>
 		</div>
-		<div className='absolute inset-0 bg-gradient-to-br from-[#FF6B9C] to-[#E84D8A] opacity-30' />
-		<div className='absolute -bottom-4 -right-4 text-[#FF6B9C] opacity-50'>
+		<div className='absolute inset-0 bg-gradient-to-br from-emerald-600 to-emerald-900 opacity-30' />
+		<div className='absolute -bottom-4 -right-4 text-emerald-800 opacity-50'>
 			<Icon className='h-32 w-32' />
 		</div>
 	</motion.div>

@@ -1,234 +1,181 @@
+import { redis } from "../lib/redis.js";
 import cloudinary from "../lib/cloudinary.js";
 import Product from "../models/product.model.js";
 
-// Simple in-memory cache for featured products
-let featuredProductsCache = {
-  data: null,
-  timestamp: null,
-  expiryTime: 24 * 60 * 60 * 1000 // 24 hours in milliseconds
-};
-
 export const getAllProducts = async (req, res) => {
-  try {
-    const products = await Product.find({}).lean();
-    res.json({ products });
-  } catch (error) {
-    console.log("Error in getAllProducts controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
+	try {
+		const products = await Product.find({}); // find all products
+		res.json({ products });
+	} catch (error) {
+		console.log("Error in getAllProducts controller", error.message);
+		res.status(500).json({ message: "Server error", error: error.message });
+	}
 };
 
 export const getFeaturedProducts = async (req, res) => {
-  try {
-    // Check if we have a valid cache
-    const now = Date.now();
-    if (featuredProductsCache.data && featuredProductsCache.timestamp &&
-      (now - featuredProductsCache.timestamp < featuredProductsCache.expiryTime)) {
-      return res.json(featuredProductsCache.data);
-    }
+	try {
+		let featuredProducts = await redis.get("featured_products");
+		
+		if (featuredProducts) {
+			try {
+				// Add error handling for JSON parsing
+				featuredProducts = JSON.parse(featuredProducts);
+				return res.json(featuredProducts);
+			} catch (parseError) {
+				console.log("Error parsing featured products from Redis:", parseError.message);
+				// If parsing fails, fetch from database instead
+				await redis.del("featured_products"); // Delete the invalid data
+			}
+		}
 
-    // If no cache or expired, fetch from database with shorter timeout
-    const featuredProducts = await Promise.race([
-      Product.find({ isFeatured: true }).lean().exec(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Featured products query timeout')), 5000)
-      )
-    ]);
+		// If not in redis or parsing failed, fetch from mongodb
+		// .lean() returns a plain javascript object instead of a mongodb document
+		featuredProducts = await Product.find({ isFeatured: true }).lean();
 
-    // If no featured products found, return all products (limited to 8)
-    if (!featuredProducts || featuredProducts.length === 0) {
-      const allProducts = await Promise.race([
-        Product.find({}).limit(8).lean().exec(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('All products query timeout')), 5000)
-        )
-      ]);
-      
-      // Update cache with all products
-      featuredProductsCache = {
-        data: allProducts,
-        timestamp: now,
-        expiryTime: 24 * 60 * 60 * 1000
-      };
-      
-      return res.json(allProducts);
-    }
+		if (!featuredProducts || featuredProducts.length === 0) {
+			return res.status(404).json({ message: "No featured products found" });
+		}
 
-    // Update our cache with featured products
-    featuredProductsCache = {
-      data: featuredProducts,
-      timestamp: now,
-      expiryTime: 24 * 60 * 60 * 1000
-    };
+		// Store in redis for future quick access
+		try {
+			// Make sure the data is valid before storing
+			const jsonData = JSON.stringify(featuredProducts);
+			// Test parse to ensure it's valid
+			JSON.parse(jsonData);
+			
+			// Store in Redis with expiration
+			await redis.set("featured_products", jsonData, {
+				ex: 60 * 60 * 24 // 24 hours expiration in seconds
+			});
+		} catch (error) {
+			console.log("Error storing featured products in Redis:", error.message);
+			// Continue without failing the request
+		}
 
-    res.json(featuredProducts);
-  } catch (error) {
-    console.log("Error in getFeaturedProducts controller", error.message);
-    
-    // Try to return cached data even if expired as a fallback
-    if (featuredProductsCache.data) {
-      console.log("Returning expired cache data as fallback");
-      return res.json(featuredProductsCache.data);
-    }
-    
-    // Return empty array as last resort
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
+		res.json(featuredProducts);
+	} catch (error) {
+		console.log("Error in getFeaturedProducts controller", error.message);
+		res.status(500).json({ message: "Server error", error: error.message });
+	}
 };
 
 export const createProduct = async (req, res) => {
-  try {
-    const { name, description, price, image, category } = req.body;
+	try {
+		const { name, description, price, image, category } = req.body;
 
-    if (!name || !description || !price || !category) {
-      return res.status(400).json({ message: "Required fields are missing" });
-    }
+		let cloudinaryResponse = null;
 
-    let imageUrl = ""; // Default empty string instead of placeholder
+		if (image) {
+			cloudinaryResponse = await cloudinary.uploader.upload(image, { folder: "products" });
+		}
 
-    // Only try to upload to Cloudinary if we have an image string
-    if (image && image.trim() !== '') {
-      try {
-        // Check if it's a valid base64 image
-        if (image.startsWith('data:image')) {
-          const cloudinaryResponse = await cloudinary.uploader.upload(image, { 
-            folder: "products",
-            timeout: 60000 // 60 second timeout
-          });
-          
-          if (cloudinaryResponse && cloudinaryResponse.secure_url) {
-            imageUrl = cloudinaryResponse.secure_url;
-            console.log("Image uploaded successfully:", imageUrl);
-          }
-        }
-      } catch (uploadError) {
-        console.log("Error uploading to Cloudinary:", uploadError);
-        // Continue with empty image URL if Cloudinary fails
-      }
-    }
+		const product = await Product.create({
+			name,
+			description,
+			price,
+			image: cloudinaryResponse?.secure_url ? cloudinaryResponse.secure_url : "",
+			category,
+		});
 
-    // Create the product with the image URL (could be empty string)
-    const product = await Product.create({
-      name,
-      description,
-      price,
-      image: imageUrl,
-      category,
-    });
-
-    // Reset cache when a new product is created
-    featuredProductsCache.data = null;
-    featuredProductsCache.timestamp = null;
-
-    res.status(201).json(product);
-  } catch (error) {
-    console.log("Error in createProduct controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
+		res.status(201).json(product);
+	} catch (error) {
+		console.log("Error in createProduct controller", error.message);
+		res.status(500).json({ message: "Server error", error: error.message });
+	}
 };
 
 export const deleteProduct = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
+	try {
+		const product = await Product.findById(req.params.id);
 
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
+		if (!product) {
+			return res.status(404).json({ message: "Product not found" });
+		}
 
-    if (product.image) {
-      try {
-        // Extract the public ID from the Cloudinary URL
-        const publicId = product.image.split('/').slice(-2).join('/').split('.')[0];
-        await cloudinary.uploader.destroy(publicId);
-        console.log("deleted image from cloudinary");
-      } catch (error) {
-        console.log("error deleting image from cloudinary", error);
-        // Continue even if Cloudinary delete fails
-      }
-    }
+		if (product.image) {
+			const publicId = product.image.split("/").pop().split(".")[0];
+			try {
+				await cloudinary.uploader.destroy(`products/${publicId}`);
+				console.log("deleted image from cloudinary");
+			} catch (error) {
+				console.log("error deleting image from cloudinary", error);
+			}
+		}
 
-    await Product.findByIdAndDelete(req.params.id);
+		await Product.findByIdAndDelete(req.params.id);
 
-    // Reset featured products cache
-    featuredProductsCache.data = null;
-    featuredProductsCache.timestamp = null;
-
-    res.json({ message: "Product deleted successfully" });
-  } catch (error) {
-    console.log("Error in deleteProduct controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
+		res.json({ message: "Product deleted successfully" });
+	} catch (error) {
+		console.log("Error in deleteProduct controller", error.message);
+		res.status(500).json({ message: "Server error", error: error.message });
+	}
 };
 
 export const getRecommendedProducts = async (req, res) => {
-  try {
-    // Try to get some random products with a timeout
-    const products = await Promise.race([
-      Product.aggregate([
-        { $sample: { size: 4 } },
-        {
-          $project: {
-            _id: 1,
-            name: 1,
-            description: 1,
-            image: 1,
-            price: 1,
-          },
-        },
-      ]).exec(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Recommended products query timeout')), 5000)
-      )
-    ]);
+	try {
+		const products = await Product.aggregate([
+			{
+				$sample: { size: 4 },
+			},
+			{
+				$project: {
+					_id: 1,
+					name: 1,
+					description: 1,
+					image: 1,
+					price: 1,
+				},
+			},
+		]);
 
-    res.json(products);
-  } catch (error) {
-    console.log("Error in getRecommendedProducts controller", error.message);
-    // Return empty array instead of error to prevent frontend issues
-    res.json([]);
-  }
+		res.json(products);
+	} catch (error) {
+		console.log("Error in getRecommendedProducts controller", error.message);
+		res.status(500).json({ message: "Server error", error: error.message });
+	}
 };
 
 export const getProductsByCategory = async (req, res) => {
-  const { category } = req.params;
-  try {
-    if (!category) {
-      return res.status(400).json({ message: "Category parameter is required" });
-    }
-    
-    // Find products with a timeout
-    const products = await Promise.race([
-      Product.find({ category }).lean().exec(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Category products query timeout')), 5000)
-      )
-    ]);
-    
-    res.json({ products });
-  } catch (error) {
-    console.log("Error in getProductsByCategory controller", error.message);
-    // Return empty products array to prevent frontend issues
-    res.json({ products: [] });
-  }
+	const { category } = req.params;
+	try {
+		const products = await Product.find({ category });
+		res.json({ products });
+	} catch (error) {
+		console.log("Error in getProductsByCategory controller", error.message);
+		res.status(500).json({ message: "Server error", error: error.message });
+	}
 };
 
 export const toggleFeaturedProduct = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-    
-    product.isFeatured = !product.isFeatured;
-    const updatedProduct = await product.save();
-    
-    // Reset featured products cache
-    featuredProductsCache.data = null;
-    featuredProductsCache.timestamp = null;
-    
-    res.json(updatedProduct);
-  } catch (error) {
-    console.log("Error in toggleFeaturedProduct controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
+	try {
+		const product = await Product.findById(req.params.id);
+		if (product) {
+			product.isFeatured = !product.isFeatured;
+			const updatedProduct = await product.save();
+			await updateFeaturedProductsCache();
+			res.json(updatedProduct);
+		} else {
+			res.status(404).json({ message: "Product not found" });
+		}
+	} catch (error) {
+		console.log("Error in toggleFeaturedProduct controller", error.message);
+		res.status(500).json({ message: "Server error", error: error.message });
+	}
 };
+
+async function updateFeaturedProductsCache() {
+	try {
+		// The lean() method is used to return plain JavaScript objects instead of full Mongoose documents
+		const featuredProducts = await Product.find({ isFeatured: true }).lean();
+		
+		// Make sure the data is valid before storing
+		const jsonData = JSON.stringify(featuredProducts);
+		
+		// Store in Redis with expiration
+		await redis.set("featured_products", jsonData, {
+			ex: 60 * 60 * 24 // 24 hours expiration in seconds
+		});
+	} catch (error) {
+		console.log("Error in update cache function:", error.message);
+	}
+}

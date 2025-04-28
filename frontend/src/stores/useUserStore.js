@@ -3,191 +3,106 @@ import axios from "../lib/axios";
 import { toast } from "react-hot-toast";
 
 export const useUserStore = create((set, get) => ({
-  user: null,
-  loading: false,
-  checkingAuth: true,
-  error: null,
-  lastCheck: null,
+	user: null,
+	loading: false,
+	checkingAuth: true,
 
-  signup: async ({ name, email, password, confirmPassword }) => {
-    set({ loading: true, error: null });
+	signup: async ({ name, email, password, confirmPassword }) => {
+		set({ loading: true });
 
-    // Client-side validation
-    if (password !== confirmPassword) {
-      set({ loading: false, error: "Passwords do not match" });
-      toast.error("Passwords do not match");
-      return false;
-    }
+		if (password !== confirmPassword) {
+			set({ loading: false });
+			return toast.error("Passwords do not match");
+		}
 
-    try {
-      const res = await axios.post("/auth/signup", { name, email, password });
-      
-      // Store token in localStorage as backup auth method
-      if (res.data.accessToken) {
-        localStorage.setItem("accessToken", res.data.accessToken);
-      }
-      
-      set({ 
-        user: res.data, 
-        loading: false, 
-        error: null,
-        lastCheck: new Date()
-      });
-      
-      toast.success("Signup successful!");
-      return true;
-    } catch (error) {
-      // Extract error message from response if available
-      const errorMessage = error.response?.data?.message || 
-                           "An error occurred during signup";
-      
-      set({ loading: false, error: errorMessage });
-      toast.error(errorMessage);
-      return false;
-    }
-  },
+		try {
+			const res = await axios.post("/auth/signup", { name, email, password });
+			set({ user: res.data, loading: false });
+		} catch (error) {
+			set({ loading: false });
+			toast.error(error.response.data.message || "An error occurred");
+		}
+	},
+	login: async (email, password) => {
+		set({ loading: true });
 
-  login: async (email, password) => {
-    set({ loading: true, error: null });
+		try {
+			const res = await axios.post("/auth/login", { email, password });
 
-    try {
-      const res = await axios.post("/auth/login", { email, password });
-      
-      // Store token in localStorage as backup auth method
-      if (res.data.accessToken) {
-        localStorage.setItem("accessToken", res.data.accessToken);
-      }
-      
-      set({ 
-        user: res.data, 
-        loading: false, 
-        error: null,
-        lastCheck: new Date()
-      });
-      
-      toast.success("Login successful!");
-      return true;
-    } catch (error) {
-      // Handle different error scenarios
-      if (error.response?.status === 503) {
-        const errorMessage = "Database connection issue. Please try again later.";
-        set({ loading: false, error: errorMessage });
-        toast.error(errorMessage);
-        return false;
-      }
-      
-      const errorMessage = error.response?.data?.message || 
-                           "Invalid email or password";
-      
-      set({ loading: false, error: errorMessage });
-      toast.error(errorMessage);
-      return false;
-    }
-  },
+			set({ user: res.data, loading: false });
+		} catch (error) {
+			set({ loading: false });
+			toast.error(error.response.data.message || "An error occurred");
+		}
+	},
 
-  logout: async () => {
-    set({ loading: true });
-    try {
-      await axios.post("/auth/logout");
-      
-      // Clear token from localStorage
-      localStorage.removeItem("accessToken");
-      
-      set({ 
-        user: null, 
-        loading: false, 
-        error: null,
-        lastCheck: new Date()
-      });
-      
-      toast.success("Logged out successfully");
-      return true;
-    } catch (error) {
-      // Even if server-side logout fails, clear local state
-      localStorage.removeItem("accessToken");
-      
-      set({ 
-        user: null, 
-        loading: false, 
-        error: null,
-        lastCheck: new Date()
-      });
-      
-      toast.success("Logged out successfully");
-      return true;
-    }
-  },
+	logout: async () => {
+		try {
+			await axios.post("/auth/logout");
+			set({ user: null });
+		} catch (error) {
+			toast.error(error.response?.data?.message || "An error occurred during logout");
+		}
+	},
 
-  checkAuth: async () => {
-    set({ checkingAuth: true });
-    
-    // Skip frequent rechecks (within 5 minutes)
-    const lastCheck = get().lastCheck;
-    const now = new Date();
-    if (lastCheck && ((now - lastCheck) < 5 * 60 * 1000) && get().user) {
-      set({ checkingAuth: false });
-      return true;
-    }
-    
-    try {
-      const response = await axios.get("/auth/profile");
-      set({ 
-        user: response.data, 
-        checkingAuth: false, 
-        error: null,
-        lastCheck: new Date()
-      });
-      return true;
-    } catch (error) {
-      // Don't show error toast for auth check - this is expected for non-logged in users
-      console.log("Auth check: User not authenticated");
-      
-      // Clear any stored tokens if auth check fails
-      localStorage.removeItem("accessToken");
-      
-      set({ 
-        user: null, 
-        checkingAuth: false, 
-        error: null,
-        lastCheck: new Date()
-      });
-      
-      return false;
-    }
-  },
+	checkAuth: async () => {
+		set({ checkingAuth: true });
+		try {
+			const response = await axios.get("/auth/profile");
+			set({ user: response.data, checkingAuth: false });
+		} catch (error) {
+			console.log(error.message);
+			set({ checkingAuth: false, user: null });
+		}
+	},
 
-  refreshToken: async () => {
-    // Prevent multiple simultaneous refresh attempts
-    if (get().checkingAuth) return false;
+	refreshToken: async () => {
+		// Prevent multiple simultaneous refresh attempts
+		if (get().checkingAuth) return;
 
-    set({ checkingAuth: true });
-    try {
-      const response = await axios.post("/auth/refresh-token");
-      
-      if (response.data?.accessToken) {
-        localStorage.setItem("accessToken", response.data.accessToken);
-      }
-      
-      set({ 
-        checkingAuth: false, 
-        error: null,
-        lastCheck: new Date()
-      });
-      
-      return response.data;
-    } catch (error) {
-      localStorage.removeItem("accessToken");
-      
-      set({ 
-        user: null, 
-        checkingAuth: false, 
-        error: "Session expired",
-        lastCheck: new Date()
-      });
-      
-      return false;
-    }
-  },
-
-  clearError: () => set({ error: null }),
+		set({ checkingAuth: true });
+		try {
+			const response = await axios.post("/auth/refresh-token");
+			set({ checkingAuth: false });
+			return response.data;
+		} catch (error) {
+			set({ user: null, checkingAuth: false });
+			throw error;
+		}
+	},
 }));
+
+// TODO: Implement the axios interceptors for refreshing access token
+
+// Axios interceptor for token refresh
+let refreshPromise = null;
+
+axios.interceptors.response.use(
+	(response) => response,
+	async (error) => {
+		const originalRequest = error.config;
+		if (error.response?.status === 401 && !originalRequest._retry) {
+			originalRequest._retry = true;
+
+			try {
+				// If a refresh is already in progress, wait for it to complete
+				if (refreshPromise) {
+					await refreshPromise;
+					return axios(originalRequest);
+				}
+
+				// Start a new refresh process
+				refreshPromise = useUserStore.getState().refreshToken();
+				await refreshPromise;
+				refreshPromise = null;
+
+				return axios(originalRequest);
+			} catch (refreshError) {
+				// If refresh fails, redirect to login or handle as needed
+				useUserStore.getState().logout();
+				return Promise.reject(refreshError);
+			}
+		}
+		return Promise.reject(error);
+	}
+);
