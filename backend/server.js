@@ -22,30 +22,23 @@ const PORT = process.env.PORT || 5000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configure middleware
 app.use(express.json({ limit: "10mb" })); // allows you to parse the body of the request
 app.use(cookieParser());
 
-// CORS configuration
+// CORS configuration for development
 if (process.env.NODE_ENV !== "production") {
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
     res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-      return res.status(204).end();
-    }
-    
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     next();
   });
 }
 
-// Health check endpoint
+// Simple route to verify API is working
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ message: 'API is running', environment: process.env.NODE_ENV });
+  res.status(200).json({ message: 'API is running' });
 });
 
 // API routes
@@ -56,12 +49,12 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
-// For Vercel deployment - handle static files
-const frontendBuildPath = path.resolve(__dirname, '../../frontend/dist');
-
-// Serve static files 
+// Serve static files if in production
 if (process.env.NODE_ENV === "production") {
   // Set static folder
+  const frontendBuildPath = path.resolve(__dirname, '../frontend/dist');
+  
+  // Serve static files
   app.use(express.static(frontendBuildPath));
   
   // Handle SPA routing - redirect all non-API routes to React app
@@ -69,17 +62,9 @@ if (process.env.NODE_ENV === "production") {
     // Only handle non-API routes with the frontend
     if (!req.path.startsWith('/api/')) {
       res.sendFile(path.resolve(frontendBuildPath, 'index.html'));
-    } else {
-      // If API route not found, return 404
-      res.status(404).json({ message: 'API endpoint not found' });
     }
   });
 }
-
-// Catch-all for API 404s
-app.use('/api/*', (req, res) => {
-  res.status(404).json({ message: 'API endpoint not found' });
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
