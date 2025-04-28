@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
+import { ensureDbConnected } from "../lib/db.js";
 
 export const protectRoute = async (req, res, next) => {
   try {
@@ -38,7 +39,14 @@ export const protectRoute = async (req, res, next) => {
 
     try {
       const decoded = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
-      const user = await User.findById(decoded.userId).select("-password -refreshToken");
+      
+      // Ensure database connection before user lookup
+      await ensureDbConnected();
+      
+      // Add timeout to user query to prevent hanging
+      const user = await User.findById(decoded.userId)
+        .select("-password -refreshToken")
+        .maxTimeMS(5000);
 
       if (!user) {
         return res.status(401).json({ message: "User not found" });
@@ -48,6 +56,13 @@ export const protectRoute = async (req, res, next) => {
       next();
     } catch (error) {
       console.log("Token verification error:", error.name, error.message);
+      
+      if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
+        return res.status(500).json({ 
+          message: "Database connection error. Please try again later.",
+          error: error.message
+        });
+      }
       
       if (error.name === "TokenExpiredError") {
         return res.status(401).json({ message: "Unauthorized - Access token expired" });

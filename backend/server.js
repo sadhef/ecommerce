@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { connectDB } from "./lib/db.js";
+import { connectDB, ensureDbConnected } from "./lib/db.js";
 
 import authRoutes from "./routes/auth.route.js";
 import productRoutes from "./routes/product.route.js";
@@ -26,7 +26,7 @@ const PORT = process.env.PORT || 5000;
     console.log("MongoDB connected successfully on server startup");
   } catch (error) {
     console.error("Initial MongoDB connection failed:", error.message);
-    // Continue execution - serverless functions will retry connection when needed
+    // Continue execution - we'll retry connection when needed
   }
 })();
 
@@ -63,9 +63,34 @@ app.use(cors({
 // Add preflight response for OPTIONS requests
 app.options('*', cors());
 
+// Database connection middleware
+app.use(async (req, res, next) => {
+  try {
+    await ensureDbConnected();
+    next();
+  } catch (error) {
+    console.error("Database connection error in middleware:", error.message);
+    return res.status(500).json({ 
+      message: 'Database connection error', 
+      error: error.message 
+    });
+  }
+});
+
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ message: 'API is running' });
+app.get('/health', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    res.status(200).json({ 
+      message: 'API is running',
+      database: 'connected' 
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'API is running, but database is disconnected',
+      error: error.message
+    });
+  }
 });
 
 // API routes

@@ -1,5 +1,6 @@
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
+import { ensureDbConnected } from "../lib/db.js";
 
 const generateTokens = (userId) => {
   const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, {
@@ -15,7 +16,13 @@ const generateTokens = (userId) => {
 
 // Instead of storing in Redis, store the token in the User model
 const storeRefreshToken = async (userId, refreshToken) => {
-  await User.findByIdAndUpdate(userId, { refreshToken });
+  try {
+    await ensureDbConnected();
+    await User.findByIdAndUpdate(userId, { refreshToken });
+  } catch (error) {
+    console.error("Error storing refresh token:", error.message);
+    throw error;
+  }
 };
 
 // Set cookies with appropriate options
@@ -42,7 +49,9 @@ const setCookies = (res, accessToken, refreshToken) => {
 export const signup = async (req, res) => {
   const { email, password, name } = req.body;
   try {
-    const userExists = await User.findOne({ email });
+    await ensureDbConnected();
+    
+    const userExists = await User.findOne({ email }).maxTimeMS(5000);
 
     if (userExists) {
       return res.status(400).json({ message: "User already exists" });
@@ -67,6 +76,14 @@ export const signup = async (req, res) => {
     });
   } catch (error) {
     console.log("Error in signup controller", error.message);
+    
+    if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
+      return res.status(500).json({ 
+        message: "Database connection error. Please try again later.",
+        error: error.message
+      });
+    }
+    
     res.status(500).json({ message: error.message });
   }
 };
@@ -74,7 +91,12 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    
+    // Ensure database is connected before operations
+    await ensureDbConnected();
+    
+    // Add maxTimeMS to prevent hanging operations
+    const user = await User.findOne({ email }).maxTimeMS(5000);
 
     if (user && (await user.comparePassword(password))) {
       const { accessToken, refreshToken } = generateTokens(user._id);
@@ -97,6 +119,15 @@ export const login = async (req, res) => {
     }
   } catch (error) {
     console.log("Error in login controller", error.message);
+    
+    // Special handling for database connection errors
+    if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
+      return res.status(500).json({ 
+        message: "Database connection error. Please try again later.",
+        error: error.message
+      });
+    }
+    
     res.status(500).json({ message: error.message });
   }
 };
@@ -112,10 +143,13 @@ export const logout = async (req, res) => {
     if (refreshToken) {
       try {
         const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+        // Ensure database connection before user update
+        await ensureDbConnected();
         // Remove token from user document
-        await User.findByIdAndUpdate(decoded.userId, { refreshToken: null });
+        await User.findByIdAndUpdate(decoded.userId, { refreshToken: null }).maxTimeMS(5000);
       } catch (err) {
         console.log("Error verifying token during logout:", err.message);
+        // Continue with logout even if token verification fails
       }
     }
 
@@ -151,8 +185,11 @@ export const refreshToken = async (req, res) => {
 
     const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
     
+    // Ensure database connection before user lookup
+    await ensureDbConnected();
+    
     // Find user and check if refresh token matches
-    const user = await User.findById(decoded.userId);
+    const user = await User.findById(decoded.userId).maxTimeMS(5000);
     if (!user || user.refreshToken !== refreshToken) {
       return res.status(401).json({ message: "Invalid refresh token" });
     }
@@ -177,12 +214,22 @@ export const refreshToken = async (req, res) => {
     });
   } catch (error) {
     console.log("Error in refreshToken controller", error.message);
+    
+    // Special handling for database connection errors
+    if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
+      return res.status(500).json({ 
+        message: "Database connection error. Please try again later.",
+        error: error.message
+      });
+    }
+    
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
 export const getProfile = async (req, res) => {
   try {
+    // User is already loaded in req.user by the protectRoute middleware
     res.json(req.user);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
