@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { connectDB, ensureDbConnected } from "./lib/db.js";
+import { connectDB, ensureDbConnected, getConnectionStatus } from "./lib/db.js";
 
 import authRoutes from "./routes/auth.route.js";
 import productRoutes from "./routes/product.route.js";
@@ -11,7 +11,7 @@ import couponRoutes from "./routes/coupon.route.js";
 import paymentRoutes from "./routes/payment.route.js";
 import analyticsRoutes from "./routes/analytics.route.js";
 
-// Load environment variables
+// Load environment variables early
 dotenv.config();
 
 // Initialize express app
@@ -26,7 +26,7 @@ const PORT = process.env.PORT || 5000;
     console.log("MongoDB connected successfully on server startup");
   } catch (error) {
     console.error("Initial MongoDB connection failed:", error.message);
-    // Continue execution - we'll retry connection when needed
+    // Continue execution - serverless functions will try to reconnect when needed
   }
 })();
 
@@ -51,7 +51,7 @@ app.use(cors({
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      // Allow all origins for now to debug
+      // For deployment testing, allow all origins
       callback(null, true);
     }
   },
@@ -63,37 +63,55 @@ app.use(cors({
 // Add preflight response for OPTIONS requests
 app.options('*', cors());
 
-// Database connection middleware
+// Database connection middleware - verify connection before processing any request
 app.use(async (req, res, next) => {
   try {
+    // Skip connection check for health endpoint to avoid circular dependency
+    if (req.path === '/health' || req.path === '/api/health') {
+      return next();
+    }
+    
     await ensureDbConnected();
     next();
   } catch (error) {
     console.error("Database connection error in middleware:", error.message);
-    return res.status(500).json({ 
-      message: 'Database connection error', 
+    return res.status(503).json({ 
+      message: 'Database service unavailable', 
       error: error.message 
     });
   }
 });
 
 // Health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    await ensureDbConnected();
+app.get(['/health', '/api/health'], (req, res) => {
+  const dbStatus = getConnectionStatus();
+  
+  if (dbStatus.readyState === 1) {
     res.status(200).json({ 
       message: 'API is running',
-      database: 'connected' 
+      database: dbStatus
     });
-  } catch (error) {
-    res.status(500).json({ 
-      message: 'API is running, but database is disconnected',
-      error: error.message
+  } else {
+    // Return 200 but indicate DB is not connected
+    res.status(200).json({ 
+      message: 'API is running but database is not fully connected',
+      database: dbStatus
     });
   }
 });
 
-// API routes
+// API routes with proper prefixing
+const apiPrefix = '/api';
+
+// Apply routes with proper prefixing
+app.use(`${apiPrefix}/auth`, authRoutes);
+app.use(`${apiPrefix}/products`, productRoutes);
+app.use(`${apiPrefix}/cart`, cartRoutes);
+app.use(`${apiPrefix}/coupons`, couponRoutes);
+app.use(`${apiPrefix}/payments`, paymentRoutes);
+app.use(`${apiPrefix}/analytics`, analyticsRoutes);
+
+// For backwards compatibility - also expose routes without /api prefix
 app.use("/auth", authRoutes);
 app.use("/products", productRoutes);
 app.use("/cart", cartRoutes);
@@ -104,12 +122,33 @@ app.use("/analytics", analyticsRoutes);
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error("Server error:", err.stack);
-  res.status(500).json({ 
-    message: 'Something went wrong on the server!', 
+  
+  // Check if it's a MongoDB-related error
+  const isMongoError = err.name === 'MongoError' || 
+                      err.name === 'MongoServerError' || 
+                      err.name === 'MongooseServerSelectionError' ||
+                      (err.message && (
+                        err.message.includes('MongoDB') || 
+                        err.message.includes('mongo') || 
+                        err.message.includes('buffering timed out')
+                      ));
+  
+  const statusCode = isMongoError ? 503 : 500;
+  const message = isMongoError ? 
+    'Database service unavailable. Please try again later.' : 
+    'Something went wrong on the server!';
+  
+  res.status(statusCode).json({ 
+    message, 
     error: err.message,
     // Include more details in development
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: 'API endpoint not found' });
 });
 
 // Start server for development

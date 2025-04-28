@@ -1,146 +1,123 @@
 import axios from "axios";
+import toast from "react-hot-toast";
 
-// Create a base URL that points to the backend API
-const baseURL = import.meta.env.PROD 
-  ? import.meta.env.VITE_API_URL || 'https://ecommerce-h3q3.vercel.app'  // Production backend URL
-  : 'http://localhost:5000';  // Development backend URL
-
-const axiosInstance = axios.create({
-  baseURL,
-  withCredentials: true, // still try to send cookies when possible
-  timeout: 15000, // 15 seconds timeout (increased for serverless cold starts)
-});
-
-// Function to get tokens from multiple storage types
-const getToken = (key) => {
-  // Try localStorage first
-  let token = localStorage.getItem(key);
-  
-  // If not found in localStorage, try sessionStorage
-  if (!token) {
-    token = sessionStorage.getItem(key);
+// Determine API base URL based on environment
+const getBaseURL = () => {
+  // If deployed to Vercel or similar platform
+  if (import.meta.env.PROD) {
+    // For single-domain deployment
+    if (window.location.hostname === 'ecommerce-h3q3.vercel.app') {
+      return '/api';
+    }
+    // For separate frontend/backend deployment
+    return 'https://ecommerce-h3q3.vercel.app/api';
   }
-  
-  return token;
+  // Local development
+  return 'http://localhost:5000/api';
 };
 
-// Add interceptor to include auth tokens from storage in request headers
+// Create axios instance
+const axiosInstance = axios.create({
+  baseURL: getBaseURL(),
+  withCredentials: true, // Important for sending/receiving cookies
+  timeout: 15000, // 15 seconds timeout - increased for potential slow connections
+  headers: {
+    'Content-Type': 'application/json',
+  }
+});
+
+// Request interceptor - runs before each request
 axiosInstance.interceptors.request.use(
   (config) => {
-    const accessToken = getToken('accessToken');
-    const refreshToken = getToken('refreshToken');
-    
-    if (accessToken) {
+    // Add authorization header if we have a token in localStorage
+    // This is a backup approach in case cookies don't work
+    const accessToken = localStorage.getItem('accessToken');
+    if (accessToken && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
-    
-    if (refreshToken) {
-      config.headers['X-Refresh-Token'] = refreshToken;
-    }
-    
-    // For mobile browsers, also include token in the request body for POST/PUT/PATCH
-    if (accessToken && ['post', 'put', 'patch'].includes(config.method?.toLowerCase())) {
-      // Make sure we have a data object to add the token to
-      config.data = config.data || {};
-      
-      // Add the token to the body if it's not already there
-      if (typeof config.data === 'object' && !config.data.accessToken) {
-        // If data is FormData, append the token
-        if (config.data instanceof FormData) {
-          config.data.append('accessToken', accessToken);
-        } 
-        // If data is JSON object, add the token property
-        else {
-          config.data.accessToken = accessToken;
-        }
-      }
-    }
-    
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    return Promise.reject(error);
+  }
 );
 
-// Add a response interceptor to handle token refresh and common errors
+// Response interceptor - runs after each response
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
     
-    // If error is 401 and we haven't already tried to refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // No auto retry for these URLs to prevent infinite loops
+    const noRetryUrls = ['/auth/refresh-token', '/auth/login', '/auth/signup'];
+    
+    // Database connection errors (status 503)
+    if (error.response?.status === 503) {
+      toast.error('Database connection issue. Please try again later.', {
+        id: 'db-error',
+        duration: 5000
+      });
+      return Promise.reject(error);
+    }
+    
+    // Handle 401 Unauthorized errors that aren't token refresh attempts
+    if (error.response?.status === 401 && 
+        !originalRequest._retry && 
+        !noRetryUrls.includes(originalRequest.url)) {
+      
       originalRequest._retry = true;
       
       try {
         // Try to refresh the token
-        const refreshToken = getToken('refreshToken');
+        const refreshResponse = await axiosInstance.post('/auth/refresh-token');
         
-        if (refreshToken) {
-          const res = await axios.post(`${baseURL}/auth/refresh-token`, {}, {
-            headers: {
-              'X-Refresh-Token': refreshToken
-            }
-          });
+        if (refreshResponse.data?.accessToken) {
+          // Store the new token
+          localStorage.setItem('accessToken', refreshResponse.data.accessToken);
           
-          // If token refresh was successful
-          if (res.data.accessToken) {
-            // Store the new token in both localStorage and sessionStorage
-            localStorage.setItem('accessToken', res.data.accessToken);
-            sessionStorage.setItem('accessToken', res.data.accessToken);
-            
-            // Update the original request with the new token
-            originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
-            
-            // If the original request was a POST/PUT/PATCH, add token to body as well
-            if (['post', 'put', 'patch'].includes(originalRequest.method?.toLowerCase())) {
-              // Make sure we have a data object
-              originalRequest.data = originalRequest.data || {};
-              
-              // Add the new token to the body
-              if (typeof originalRequest.data === 'object') {
-                if (originalRequest.data instanceof FormData) {
-                  // For FormData, first remove any existing token and then add the new one
-                  try {
-                    originalRequest.data.delete('accessToken');
-                  } catch (e) {
-                    // Ignore errors if the key doesn't exist
-                  }
-                  originalRequest.data.append('accessToken', res.data.accessToken);
-                } else {
-                  // For JSON objects
-                  originalRequest.data.accessToken = res.data.accessToken;
-                }
-              }
-            }
-            
-            // Retry the original request
-            return axios(originalRequest);
-          }
+          // Update the authorization header
+          axiosInstance.defaults.headers.common['Authorization'] = 
+            `Bearer ${refreshResponse.data.accessToken}`;
+          
+          // Retry the original request with the new token
+          return axiosInstance(originalRequest);
         }
       } catch (refreshError) {
-        console.error("Error refreshing token:", refreshError);
-        // If refresh failed, clear tokens
+        // If refresh fails, redirect to login
+        console.error('Token refresh failed:', refreshError);
+        
+        // Clear any stored auth data
         localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        sessionStorage.removeItem('accessToken');
-        sessionStorage.removeItem('refreshToken');
+        
+        // Show login required toast once
+        toast.error('Session expired. Please login again.', {
+          id: 'session-expired',
+          duration: 5000
+        });
+        
+        // If we're not already on the login page, redirect
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login';
+        }
       }
     }
     
-    // Handle common errors
-    if (error.response) {
-      console.error(`API Error: ${error.response.status}`, error.response.data);
-      
-      if (error.response.status === 401) {
-        console.log("Authentication error - you may need to log in again");
-      }
-    } else if (error.request) {
-      console.error("No response received from server", error.request);
-    } else {
-      console.error("Request error:", error.message);
+    // Network errors (no response)
+    if (!error.response) {
+      toast.error('Network error. Please check your connection.', {
+        id: 'network-error',
+        duration: 5000
+      });
     }
     
-    // Pass the error along to be handled by the caller
+    // Server errors (500 range)
+    if (error.response?.status >= 500 && error.response?.status !== 503) {
+      toast.error('Server error. Please try again later.', {
+        id: 'server-error',
+        duration: 5000
+      });
+    }
+    
     return Promise.reject(error);
   }
 );

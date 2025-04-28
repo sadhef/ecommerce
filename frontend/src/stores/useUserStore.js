@@ -7,45 +7,46 @@ export const useUserStore = create((set, get) => ({
   loading: false,
   checkingAuth: true,
   error: null,
+  lastCheck: null,
 
   signup: async ({ name, email, password, confirmPassword }) => {
     set({ loading: true, error: null });
 
+    // Client-side validation
     if (password !== confirmPassword) {
       set({ loading: false, error: "Passwords do not match" });
-      return toast.error("Passwords do not match");
+      toast.error("Passwords do not match");
+      return false;
+    }
+
+    if (password.length < 6) {
+      set({ loading: false, error: "Password must be at least 6 characters" });
+      toast.error("Password must be at least 6 characters");
+      return false;
     }
 
     try {
       const res = await axios.post("/auth/signup", { name, email, password });
       
-      // Store tokens in localStorage for use with API calls
+      // Store token in localStorage as backup auth method
       if (res.data.accessToken) {
         localStorage.setItem('accessToken', res.data.accessToken);
-        
-        // Also store in sessionStorage for cross-browser compatibility
-        sessionStorage.setItem('accessToken', res.data.accessToken);
-      }
-      if (res.data.refreshToken) {
-        localStorage.setItem('refreshToken', res.data.refreshToken);
-        
-        // Also store in sessionStorage for cross-browser compatibility
-        sessionStorage.setItem('refreshToken', res.data.refreshToken);
       }
       
-      // Store only user data in state, not tokens
-      const userData = {
-        _id: res.data._id,
-        name: res.data.name,
-        email: res.data.email,
-        role: res.data.role
-      };
+      set({ 
+        user: res.data, 
+        loading: false, 
+        error: null,
+        lastCheck: new Date()
+      });
       
-      set({ user: userData, loading: false, error: null });
       toast.success("Signup successful!");
       return true;
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "An error occurred during signup";
+      // Extract error message from response if available
+      const errorMessage = error.response?.data?.message || 
+                           "An error occurred during signup";
+      
       set({ loading: false, error: errorMessage });
       toast.error(errorMessage);
       return false;
@@ -58,29 +59,32 @@ export const useUserStore = create((set, get) => ({
     try {
       const res = await axios.post("/auth/login", { email, password });
       
-      // Store tokens in both localStorage and sessionStorage
+      // Store token in localStorage as backup auth method
       if (res.data.accessToken) {
         localStorage.setItem('accessToken', res.data.accessToken);
-        sessionStorage.setItem('accessToken', res.data.accessToken);
-      }
-      if (res.data.refreshToken) {
-        localStorage.setItem('refreshToken', res.data.refreshToken);
-        sessionStorage.setItem('refreshToken', res.data.refreshToken);
       }
       
-      // Store only user data in state, not tokens
-      const userData = {
-        _id: res.data._id,
-        name: res.data.name,
-        email: res.data.email,
-        role: res.data.role
-      };
+      set({ 
+        user: res.data, 
+        loading: false, 
+        error: null,
+        lastCheck: new Date()
+      });
       
-      set({ user: userData, loading: false, error: null });
       toast.success("Login successful!");
       return true;
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Invalid email or password";
+      // Handle different error scenarios
+      if (error.response?.status === 503) {
+        const errorMessage = "Database connection issue. Please try again later.";
+        set({ loading: false, error: errorMessage });
+        toast.error(errorMessage);
+        return false;
+      }
+      
+      const errorMessage = error.response?.data?.message || 
+                           "Invalid email or password";
+      
       set({ loading: false, error: errorMessage });
       toast.error(errorMessage);
       return false;
@@ -90,83 +94,70 @@ export const useUserStore = create((set, get) => ({
   logout: async () => {
     set({ loading: true });
     try {
-      // Try to logout from server, but continue even if it fails
-      try {
-        await axios.post("/auth/logout");
-      } catch (serverError) {
-        console.log("Server logout failed, continuing with client logout");
-      }
+      await axios.post("/auth/logout");
       
-      // Clear tokens from both localStorage and sessionStorage
+      // Clear token from localStorage
       localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      sessionStorage.removeItem('accessToken');
-      sessionStorage.removeItem('refreshToken');
       
-      set({ user: null, loading: false, error: null });
+      set({ 
+        user: null, 
+        loading: false, 
+        error: null,
+        lastCheck: new Date()
+      });
+      
       toast.success("Logged out successfully");
       return true;
     } catch (error) {
-      console.error("Error during logout:", error);
-      
-      // Still clear tokens and user state on client side
+      // Even if server-side logout fails, clear local state
       localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      sessionStorage.removeItem('accessToken');
-      sessionStorage.removeItem('refreshToken');
-      set({ user: null, loading: false, error: null });
       
-      return true; // Return true anyway as the user is effectively logged out
+      set({ 
+        user: null, 
+        loading: false, 
+        error: null,
+        lastCheck: new Date()
+      });
+      
+      toast.success("Logged out successfully");
+      return true;
     }
   },
 
   checkAuth: async () => {
     set({ checkingAuth: true });
     
-    // Check if we have a token in either localStorage or sessionStorage
-    const accessToken = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
-    
-    if (!accessToken) {
-      set({ user: null, checkingAuth: false, error: null });
-      return false;
+    // Skip frequent rechecks (within 5 minutes)
+    const lastCheck = get().lastCheck;
+    const now = new Date();
+    if (lastCheck && ((now - lastCheck) < 5 * 60 * 1000) && get().user) {
+      set({ checkingAuth: false });
+      return true;
     }
     
     try {
       const response = await axios.get("/auth/profile");
-      set({ user: response.data, checkingAuth: false, error: null });
+      set({ 
+        user: response.data, 
+        checkingAuth: false, 
+        error: null,
+        lastCheck: new Date()
+      });
       return true;
     } catch (error) {
+      // Don't show error toast for auth check - this is expected for non-logged in users
       console.log("Auth check: User not authenticated");
       
-      // Clear invalid tokens
+      // Clear any stored tokens if auth check fails
       localStorage.removeItem('accessToken');
-      sessionStorage.removeItem('accessToken');
       
-      // Try to refresh token before giving up
-      const refreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
-      if (refreshToken) {
-        try {
-          await get().refreshToken();
-          // If refresh succeeded, try again to get profile
-          try {
-            const retryResponse = await axios.get("/auth/profile");
-            set({ user: retryResponse.data, checkingAuth: false, error: null });
-            return true;
-          } catch (retryError) {
-            // Still failed after token refresh
-            localStorage.removeItem('refreshToken');
-            sessionStorage.removeItem('refreshToken');
-            set({ user: null, checkingAuth: false, error: null });
-            return false;
-          }
-        } catch (refreshError) {
-          // Refresh token failed too, clear it
-          localStorage.removeItem('refreshToken');
-          sessionStorage.removeItem('refreshToken');
-        }
-      }
+      set({ 
+        user: null, 
+        checkingAuth: false, 
+        error: null,
+        lastCheck: new Date()
+      });
       
-      set({ user: null, checkingAuth: false, error: null });
       return false;
     }
   },
@@ -176,50 +167,33 @@ export const useUserStore = create((set, get) => ({
     if (get().checkingAuth) return false;
 
     set({ checkingAuth: true });
-    
-    const refreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
-    
-    if (!refreshToken) {
-      set({ user: null, checkingAuth: false, error: "No refresh token" });
-      return false;
-    }
-    
     try {
-      // Use native fetch instead of axios to avoid interceptors
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://ecommerce-h3q3.vercel.app'}/auth/refresh-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Refresh-Token': refreshToken
-        }
+      const response = await axios.post("/auth/refresh-token");
+      
+      if (response.data?.accessToken) {
+        localStorage.setItem('accessToken', response.data.accessToken);
+      }
+      
+      set({ 
+        checkingAuth: false, 
+        error: null,
+        lastCheck: new Date()
       });
       
-      if (!response.ok) {
-        throw new Error('Refresh token failed');
-      }
-      
-      const data = await response.json();
-      
-      if (data.accessToken) {
-        // Store in both localStorage and sessionStorage
-        localStorage.setItem('accessToken', data.accessToken);
-        sessionStorage.setItem('accessToken', data.accessToken);
-        set({ checkingAuth: false, error: null });
-        return true;
-      } else {
-        throw new Error('No access token in response');
-      }
+      return response.data;
     } catch (error) {
-      console.error("Error refreshing token:", error);
-      // Clear invalid tokens
       localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      sessionStorage.removeItem('accessToken');
-      sessionStorage.removeItem('refreshToken');
-      set({ user: null, checkingAuth: false, error: "Session expired" });
+      
+      set({ 
+        user: null, 
+        checkingAuth: false, 
+        error: "Session expired",
+        lastCheck: new Date()
+      });
+      
       return false;
     }
   },
 
   clearError: () => set({ error: null }),
-}));
+});

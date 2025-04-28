@@ -2,6 +2,11 @@ import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 import { ensureDbConnected } from "../lib/db.js";
 
+/**
+ * Generate access and refresh tokens for a user
+ * @param {string} userId - User ID to include in the token
+ * @returns {Object} Object containing accessToken and refreshToken
+ */
 const generateTokens = (userId) => {
   const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: "15m",
@@ -14,26 +19,38 @@ const generateTokens = (userId) => {
   return { accessToken, refreshToken };
 };
 
-// Instead of storing in Redis, store the token in the User model
+/**
+ * Store refresh token in user document
+ * @param {string} userId - User ID
+ * @param {string} refreshToken - Token to store
+ */
 const storeRefreshToken = async (userId, refreshToken) => {
   try {
-    await ensureDbConnected();
-    await User.findByIdAndUpdate(userId, { refreshToken });
+    await User.findByIdAndUpdate(
+      userId, 
+      { refreshToken },
+      { new: true }
+    ).maxTimeMS(5000);
   } catch (error) {
     console.error("Error storing refresh token:", error.message);
     throw error;
   }
 };
 
-// Set cookies with appropriate options
+/**
+ * Set cookies with appropriate security options
+ * @param {Object} res - Express response object
+ * @param {string} accessToken - Access token to set in cookie
+ * @param {string} refreshToken - Refresh token to set in cookie
+ */
 const setCookies = (res, accessToken, refreshToken) => {
   // For Vercel deployment with separate frontend/backend
   const cookieOptions = {
     httpOnly: true,
-    secure: true, // Always use secure for cross-domain
-    sameSite: "none", // Required for cross-site cookie setting
+    secure: process.env.NODE_ENV === 'production', // Secure in production
+    sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax",
     maxAge: 15 * 60 * 1000, // 15 minutes
-    path: "/", // Ensure path is set
+    path: "/",
   };
 
   const refreshCookieOptions = {
@@ -41,100 +58,145 @@ const setCookies = (res, accessToken, refreshToken) => {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   };
 
-  // Set cookies (these may not work on all mobile browsers)
+  // Set cookies
   res.cookie("accessToken", accessToken, cookieOptions);
   res.cookie("refreshToken", refreshToken, refreshCookieOptions);
 };
 
+/**
+ * User signup controller
+ */
 export const signup = async (req, res) => {
   const { email, password, name } = req.body;
+  
+  // Basic validation
+  if (!email || !password || !name) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+  
   try {
+    // Ensure DB is connected
     await ensureDbConnected();
     
+    // Use a timeout to prevent hanging operations
     const userExists = await User.findOne({ email }).maxTimeMS(5000);
 
     if (userExists) {
       return res.status(400).json({ message: "User already exists" });
     }
+    
+    // Create new user
     const user = await User.create({ name, email, password });
 
-    // authenticate
+    // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user._id);
     await storeRefreshToken(user._id, refreshToken);
 
-    // Set cookies for browsers that support them
+    // Set cookies
     setCookies(res, accessToken, refreshToken);
 
-    // Return tokens in response body for mobile
+    // Return user info and tokens
     res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
-      accessToken, // Include tokens in response body for mobile clients
+      accessToken,
       refreshToken
     });
   } catch (error) {
-    console.log("Error in signup controller", error.message);
+    console.error("Error in signup controller:", error);
     
-    if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
-      return res.status(500).json({ 
-        message: "Database connection error. Please try again later.",
-        error: error.message
+    // Specific error handling for known issues
+    if (error.name === 'MongoServerSelectionError' || 
+        error.message.includes('buffering timed out') ||
+        error.name === 'MongooseServerSelectionError') {
+      return res.status(503).json({ 
+        message: "Database service unavailable. Please try again later.",
       });
     }
     
-    res.status(500).json({ message: error.message });
+    // Duplicate key error
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
+    
+    // Validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ message: messages.join(', ') });
+    }
+    
+    res.status(500).json({ message: "Server error during signup" });
   }
 };
 
+/**
+ * User login controller
+ */
 export const login = async (req, res) => {
+  const { email, password } = req.body;
+  
+  // Basic validation
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
+  }
+  
   try {
-    const { email, password } = req.body;
-    
-    // Ensure database is connected before operations
+    // Ensure DB is connected
     await ensureDbConnected();
     
-    // Add maxTimeMS to prevent hanging operations
+    // Find user with timeout
     const user = await User.findOne({ email }).maxTimeMS(5000);
 
-    if (user && (await user.comparePassword(password))) {
-      const { accessToken, refreshToken } = generateTokens(user._id);
-      await storeRefreshToken(user._id, refreshToken);
-      
-      // Set cookies for browsers that support them
-      setCookies(res, accessToken, refreshToken);
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
 
-      // Return tokens in body for mobile apps
-      res.json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        accessToken,
-        refreshToken
-      });
-    } else {
-      res.status(400).json({ message: "Invalid email or password" });
+    const isMatch = await user.comparePassword(password);
+    
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid email or password" });
     }
+
+    // Generate tokens
+    const { accessToken, refreshToken } = generateTokens(user._id);
+    await storeRefreshToken(user._id, refreshToken);
+    
+    // Set cookies
+    setCookies(res, accessToken, refreshToken);
+
+    // Return user info and tokens
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      accessToken,
+      refreshToken
+    });
   } catch (error) {
-    console.log("Error in login controller", error.message);
+    console.error("Error in login controller:", error);
     
-    // Special handling for database connection errors
-    if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
-      return res.status(500).json({ 
-        message: "Database connection error. Please try again later.",
-        error: error.message
+    // Check if it's a database connection issue
+    if (error.name === 'MongoServerSelectionError' || 
+        error.message.includes('buffering timed out') ||
+        error.name === 'MongooseServerSelectionError') {
+      return res.status(503).json({ 
+        message: "Database service unavailable. Please try again later."
       });
     }
     
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Server error during login" });
   }
 };
 
+/**
+ * User logout controller
+ */
 export const logout = async (req, res) => {
   try {
-    // Get refresh token from various possible sources
+    // Get refresh token from various sources
     const refreshToken = 
       req.cookies.refreshToken || 
       req.headers['x-refresh-token'] || 
@@ -143,95 +205,128 @@ export const logout = async (req, res) => {
     if (refreshToken) {
       try {
         const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-        // Ensure database connection before user update
+        
+        // Ensure DB is connected
         await ensureDbConnected();
-        // Remove token from user document
-        await User.findByIdAndUpdate(decoded.userId, { refreshToken: null }).maxTimeMS(5000);
+        
+        // Clear refresh token from user document
+        await User.findByIdAndUpdate(
+          decoded.userId, 
+          { refreshToken: null },
+          { new: true }
+        ).maxTimeMS(5000);
       } catch (err) {
-        console.log("Error verifying token during logout:", err.message);
         // Continue with logout even if token verification fails
+        console.log("Error during logout token verification:", err.message);
       }
     }
 
-    // Clear cookies with appropriate settings for cross-domain
+    // Clear cookies
     const cookieOptions = {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax",
       path: "/"
     };
 
     res.clearCookie("accessToken", cookieOptions);
     res.clearCookie("refreshToken", cookieOptions);
+    
     res.json({ message: "Logged out successfully" });
   } catch (error) {
-    console.log("Error in logout controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Error in logout controller:", error);
+    res.status(500).json({ message: "Server error during logout" });
   }
 };
 
-// this will refresh the access token
+/**
+ * Refresh token controller
+ */
 export const refreshToken = async (req, res) => {
   try {
-    // Get refresh token from various possible sources
-    const refreshToken = 
+    // Get refresh token from various sources
+    const tokenFromRequest = 
       req.cookies.refreshToken || 
       req.headers['x-refresh-token'] || 
       (req.body && req.body.refreshToken);
 
-    if (!refreshToken) {
+    if (!tokenFromRequest) {
       return res.status(401).json({ message: "No refresh token provided" });
     }
 
-    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-    
-    // Ensure database connection before user lookup
-    await ensureDbConnected();
-    
-    // Find user and check if refresh token matches
-    const user = await User.findById(decoded.userId).maxTimeMS(5000);
-    if (!user || user.refreshToken !== refreshToken) {
+    // Verify the token
+    let decoded;
+    try {
+      decoded = jwt.verify(tokenFromRequest, process.env.REFRESH_TOKEN_SECRET);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ message: "Refresh token expired" });
+      }
       return res.status(401).json({ message: "Invalid refresh token" });
     }
 
-    const accessToken = jwt.sign({ userId: decoded.userId }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+    // Ensure DB is connected
+    await ensureDbConnected();
+    
+    // Find user and verify token
+    const user = await User.findById(decoded.userId).maxTimeMS(5000);
+    
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+    
+    if (user.refreshToken !== tokenFromRequest) {
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
 
-    // Set cookie with appropriate settings for cross-domain
+    // Generate new access token
+    const accessToken = jwt.sign(
+      { userId: decoded.userId }, 
+      process.env.ACCESS_TOKEN_SECRET, 
+      { expiresIn: "15m" }
+    );
+
+    // Set cookie
     const cookieOptions = {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax",
+      maxAge: 15 * 60 * 1000,
       path: "/"
     };
 
     res.cookie("accessToken", accessToken, cookieOptions);
 
-    // Return token in response body for mobile clients
+    // Return token in response body
     res.json({ 
       message: "Token refreshed successfully",
       accessToken
     });
   } catch (error) {
-    console.log("Error in refreshToken controller", error.message);
+    console.error("Error in refreshToken controller:", error);
     
-    // Special handling for database connection errors
-    if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
-      return res.status(500).json({ 
-        message: "Database connection error. Please try again later.",
-        error: error.message
+    // Database connection issues
+    if (error.name === 'MongoServerSelectionError' || 
+        error.message.includes('buffering timed out') ||
+        error.name === 'MongooseServerSelectionError') {
+      return res.status(503).json({ 
+        message: "Database service unavailable. Please try again later."
       });
     }
     
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Get user profile controller
+ */
 export const getProfile = async (req, res) => {
   try {
-    // User is already loaded in req.user by the protectRoute middleware
+    // User is already loaded by protectRoute middleware
     res.json(req.user);
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Error in getProfile controller:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };

@@ -2,9 +2,12 @@ import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
 import { ensureDbConnected } from "../lib/db.js";
 
+/**
+ * Middleware to protect routes - verifies JWT and loads user
+ */
 export const protectRoute = async (req, res, next) => {
   try {
-    // Try to get token from multiple sources
+    // Get token from various sources
     let accessToken = null;
     
     // 1. Check cookies
@@ -18,17 +21,16 @@ export const protectRoute = async (req, res, next) => {
       if (authHeader.startsWith("Bearer ")) {
         accessToken = authHeader.substring(7);
       } else {
-        // If the header doesn't start with Bearer, use it directly
         accessToken = authHeader;
       }
     }
     
-    // 3. Check if token is passed as a query parameter (for testing/debugging)
+    // 3. Check query parameter
     if (!accessToken && req.query && req.query.token) {
       accessToken = req.query.token;
     }
     
-    // 4. Check if token is in the body (some mobile browsers might send it this way)
+    // 4. Check body
     if (!accessToken && req.body && req.body.accessToken) {
       accessToken = req.body.accessToken;
     }
@@ -38,12 +40,13 @@ export const protectRoute = async (req, res, next) => {
     }
 
     try {
+      // Verify token
       const decoded = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
       
       // Ensure database connection before user lookup
       await ensureDbConnected();
       
-      // Add timeout to user query to prevent hanging
+      // Find user with timeout
       const user = await User.findById(decoded.userId)
         .select("-password -refreshToken")
         .maxTimeMS(5000);
@@ -52,18 +55,22 @@ export const protectRoute = async (req, res, next) => {
         return res.status(401).json({ message: "User not found" });
       }
 
+      // Add user to request object
       req.user = user;
       next();
     } catch (error) {
       console.log("Token verification error:", error.name, error.message);
       
-      if (error.name === 'MongooseServerSelectionError' || error.message.includes('buffering timed out')) {
-        return res.status(500).json({ 
-          message: "Database connection error. Please try again later.",
-          error: error.message
+      // Handle database connection errors
+      if (error.name === 'MongoServerSelectionError' || 
+          error.message.includes('buffering timed out') ||
+          error.name === 'MongooseServerSelectionError') {
+        return res.status(503).json({ 
+          message: "Database service unavailable. Please try again later."
         });
       }
       
+      // Handle token errors
       if (error.name === "TokenExpiredError") {
         return res.status(401).json({ message: "Unauthorized - Access token expired" });
       }
@@ -75,11 +82,14 @@ export const protectRoute = async (req, res, next) => {
       throw error;
     }
   } catch (error) {
-    console.log("Error in protectRoute middleware", error.message);
+    console.error("Error in protectRoute middleware:", error);
     return res.status(401).json({ message: "Unauthorized - Authentication failed" });
   }
 };
 
+/**
+ * Middleware to restrict routes to admin users only
+ */
 export const adminRoute = (req, res, next) => {
   if (req.user && req.user.role === "admin") {
     next();
