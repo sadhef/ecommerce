@@ -1,0 +1,30 @@
+{
+    "name": "ri-carts-ecommerce",
+    "version": "1.0.0",
+    "description": "MERN Stack E-commerce Application",
+    "main": "backend/server.js",
+    "scripts": {
+      "start": "node backend/server.js",
+      "install-server": "cd backend && npm install",
+      "install-client": "cd frontend && npm install",
+      "install": "npm run install-server && npm run install-client",
+      "build": "cd frontend && npm run build",
+      "dev-server": "cd backend && npm run dev",
+      "dev-client": "cd frontend && npm run dev",
+      "dev": "concurrently \"npm run dev-server\" \"npm run dev-client\""
+    },
+    "type": "module",
+    "keywords": [
+      "mern",
+      "react",
+      "nodejs",
+      "express",
+      "mongodb",
+      "ecommerce"
+    ],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+      "concurrently": "^8.2.2"
+    }
+  }
