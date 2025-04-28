@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ShoppingCart, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCartStore } from "../stores/useCartStore";
 
-const FeaturedProducts = ({ featuredProducts }) => {
+const FeaturedProducts = ({ featuredProducts = [] }) => {
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [itemsPerPage, setItemsPerPage] = useState(4);
 
@@ -20,6 +20,16 @@ const FeaturedProducts = ({ featuredProducts }) => {
 		window.addEventListener("resize", handleResize);
 		return () => window.removeEventListener("resize", handleResize);
 	}, []);
+
+	// If we don't have products or it's an empty array, don't render anything
+	if (!featuredProducts || featuredProducts.length === 0) {
+		return (
+			<div className="py-12 text-center">
+				<h2 className="text-center text-5xl sm:text-6xl font-bold text-emerald-400 mb-4">Featured</h2>
+				<p className="text-gray-300">No featured products available at the moment.</p>
+			</div>
+		);
+	}
 
 	const nextSlide = () => {
 		setCurrentIndex((prevIndex) => prevIndex + itemsPerPage);
@@ -42,7 +52,7 @@ const FeaturedProducts = ({ featuredProducts }) => {
 							className='flex transition-transform duration-300 ease-in-out'
 							style={{ transform: `translateX(-${currentIndex * (100 / itemsPerPage)}%)` }}
 						>
-							{featuredProducts?.map((product) => (
+							{featuredProducts.map((product) => (
 								<div key={product._id} className='w-full sm:w-1/2 lg:w-1/3 xl:w-1/4 flex-shrink-0 px-2'>
 									<div className='bg-white bg-opacity-10 backdrop-blur-sm rounded-lg shadow-lg overflow-hidden h-full transition-all duration-300 hover:shadow-xl border border-emerald-500/30'>
 										<div className='overflow-hidden'>
@@ -50,12 +60,16 @@ const FeaturedProducts = ({ featuredProducts }) => {
 												src={product.image}
 												alt={product.name}
 												className='w-full h-48 object-cover transition-transform duration-300 ease-in-out hover:scale-110'
+												onError={(e) => {
+													e.target.onerror = null;
+													e.target.src = '/placeholder-product.jpg'; // Fallback image
+												}}
 											/>
 										</div>
 										<div className='p-4'>
 											<h3 className='text-lg font-semibold mb-2 text-white'>{product.name}</h3>
 											<p className='text-emerald-300 font-medium mb-4'>
-												${product.price.toFixed(2)}
+												${typeof product.price === 'number' ? product.price.toFixed(2) : '0.00'}
 											</p>
 											<button
 												onClick={() => addToCart(product)}
@@ -71,25 +85,29 @@ const FeaturedProducts = ({ featuredProducts }) => {
 							))}
 						</div>
 					</div>
-					<button
-						onClick={prevSlide}
-						disabled={isStartDisabled}
-						className={`absolute top-1/2 -left-4 transform -translate-y-1/2 p-2 rounded-full transition-colors duration-300 ${
-							isStartDisabled ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-500"
-						}`}
-					>
-						<ChevronLeft className='w-6 h-6' />
-					</button>
+					{featuredProducts.length > itemsPerPage && (
+						<>
+							<button
+								onClick={prevSlide}
+								disabled={isStartDisabled}
+								className={`absolute top-1/2 -left-4 transform -translate-y-1/2 p-2 rounded-full transition-colors duration-300 ${
+									isStartDisabled ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-500"
+								}`}
+							>
+								<ChevronLeft className='w-6 h-6' />
+							</button>
 
-					<button
-						onClick={nextSlide}
-						disabled={isEndDisabled}
-						className={`absolute top-1/2 -right-4 transform -translate-y-1/2 p-2 rounded-full transition-colors duration-300 ${
-							isEndDisabled ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-500"
-						}`}
-					>
-						<ChevronRight className='w-6 h-6' />
-					</button>
+							<button
+								onClick={nextSlide}
+								disabled={isEndDisabled}
+								className={`absolute top-1/2 -right-4 transform -translate-y-1/2 p-2 rounded-full transition-colors duration-300 ${
+									isEndDisabled ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-500"
+								}`}
+							>
+								<ChevronRight className='w-6 h-6' />
+							</button>
+						</>
+					)}
 				</div>
 			</div>
 		</div>

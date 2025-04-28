@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import CategoryItem from "../components/CategoryItem";
 import { useProductStore } from "../stores/useProductStore";
 import FeaturedProducts from "../components/FeaturedProducts";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 const categories = [
 	{ href: "/jeans", name: "Jeans", imageUrl: "/jeans.jpg" },
@@ -14,7 +15,7 @@ const categories = [
 ];
 
 const HomePage = () => {
-	const { fetchFeaturedProducts, products, isLoading } = useProductStore();
+	const { fetchFeaturedProducts, products, isLoading, error } = useProductStore();
 
 	useEffect(() => {
 		fetchFeaturedProducts();
@@ -36,7 +37,14 @@ const HomePage = () => {
 					))}
 				</div>
 
-				{!isLoading && products.length > 0 && <FeaturedProducts featuredProducts={products} />}
+				{isLoading && <LoadingSpinner />}
+				
+				{error && <div className="text-center text-red-400 mt-8 p-4 bg-gray-800 rounded-lg">{error}</div>}
+
+				{/* Only render FeaturedProducts if products exist and have items */}
+				{!isLoading && !error && products && products.length > 0 && (
+					<FeaturedProducts featuredProducts={products} />
+				)}
 			</div>
 		</div>
 	);

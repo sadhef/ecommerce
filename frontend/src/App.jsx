@@ -1,35 +1,86 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Toaster } from "react-hot-toast";
 
+// Pages
 import HomePage from "./pages/HomePage";
 import SignUpPage from "./pages/SignUpPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 import CategoryPage from "./pages/CategoryPage";
-
-import Navbar from "./components/Navbar";
-import { Toaster } from "react-hot-toast";
-import { useUserStore } from "./stores/useUserStore";
-import { useEffect } from "react";
-import LoadingSpinner from "./components/LoadingSpinner";
 import CartPage from "./pages/CartPage";
-import { useCartStore } from "./stores/useCartStore";
 import PurchaseSuccessPage from "./pages/PurchaseSuccessPage";
 import PurchaseCancelPage from "./pages/PurchaseCancelPage";
+
+// Components
+import Navbar from "./components/Navbar";
+import LoadingSpinner from "./components/LoadingSpinner";
+
+// Stores
+import { useUserStore } from "./stores/useUserStore";
+import { useCartStore } from "./stores/useCartStore";
 
 function App() {
 	const { user, checkAuth, checkingAuth } = useUserStore();
 	const { getCartItems } = useCartStore();
+	const [authError, setAuthError] = useState(null);
+
+	// Handle authentication
 	useEffect(() => {
-		checkAuth();
+		const initAuth = async () => {
+			try {
+				await checkAuth();
+				setAuthError(null);
+			} catch (error) {
+				logError("App - initAuth", error);
+				setAuthError("Unable to authenticate. Please try again later.");
+			}
+		};
+		
+		initAuth();
 	}, [checkAuth]);
 
+	// Get cart items when user is authenticated
 	useEffect(() => {
-		if (!user) return;
-
-		getCartItems();
+		const loadCartItems = async () => {
+			if (!user) return;
+			try {
+				await getCartItems();
+			} catch (error) {
+				logError("App - loadCartItems", error);
+				// No need to show error here as it's handled in the store
+			}
+		};
+		
+		loadCartItems();
 	}, [getCartItems, user]);
 
-	if (checkingAuth) return <LoadingSpinner />;
+	// Show loading spinner while checking authentication
+	if (checkingAuth) {
+		return (
+			<div className="bg-gray-900 min-h-screen">
+				<LoadingSpinner />
+			</div>
+		);
+	}
+
+	// Show auth error if there's an issue
+	if (authError) {
+		return (
+			<div className="bg-gray-900 min-h-screen flex flex-col items-center justify-center p-4 text-white">
+				<div className="bg-gray-800 p-8 rounded-lg shadow-lg max-w-md w-full text-center">
+					<h2 className="text-xl text-red-400 mb-4">Authentication Error</h2>
+					<p className="text-gray-300 mb-6">{authError}</p>
+					<button
+						onClick={() => window.location.reload()}
+						className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded"
+					>
+						Retry
+					</button>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className='min-h-screen bg-gray-900 text-white relative overflow-hidden'>
@@ -59,7 +110,27 @@ function App() {
 					<Route path='/purchase-cancel' element={user ? <PurchaseCancelPage /> : <Navigate to='/login' />} />
 				</Routes>
 			</div>
-			<Toaster />
+			<Toaster 
+				position="top-center"
+				toastOptions={{
+					duration: 3000,
+					style: {
+						background: '#333',
+						color: '#fff',
+					},
+					success: {
+						style: {
+							background: '#10B981',
+						},
+					},
+					error: {
+						style: {
+							background: '#EF4444',
+						},
+						duration: 4000,
+					},
+				}}
+			/>
 		</div>
 	);
 }
