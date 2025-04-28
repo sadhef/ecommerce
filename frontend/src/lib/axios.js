@@ -27,6 +27,11 @@ axiosInstance.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
+    // Log requests in development
+    if (import.meta.env.DEV) {
+      console.log(`Request: ${config.method.toUpperCase()} ${config.url}`, config);
+    }
+    
     return config;
   },
   (error) => {
@@ -36,9 +41,15 @@ axiosInstance.interceptors.request.use(
 
 // Add response interceptor for error handling
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Log successful responses in development
+    if (import.meta.env.DEV) {
+      console.log(`Response from ${response.config.url}:`, response.status);
+    }
+    return response;
+  },
   (error) => {
-    // Log the detailed error for debugging
+    // Log detailed error information
     console.error("API Error:", error);
     
     // Handle network errors

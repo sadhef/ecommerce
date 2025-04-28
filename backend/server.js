@@ -17,12 +17,15 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const __dirname = path.resolve();
 
-// CORS setup for cross-origin requests - no credentials needed
+// CORS setup for cross-origin requests
 app.use(cors({
   origin: ["https://ri-cart.vercel.app", "http://localhost:5173"],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
 
 // For parsing JSON
 app.use(express.json({ limit: "10mb" }));
@@ -30,6 +33,17 @@ app.use(express.json({ limit: "10mb" }));
 // Simple health check endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', environment: process.env.NODE_ENV });
+});
+
+// Debug endpoint
+app.get('/api/debug', (req, res) => {
+  res.json({
+    env: process.env.NODE_ENV,
+    nodeVersion: process.version,
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage(),
+    headers: req.headers
+  });
 });
 
 // API routes
@@ -40,10 +54,13 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
-// Database connection
+// Database connection with better error handling
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.log("MongoDB connection error:", err));
+  .then(() => console.log("MongoDB connected successfully"))
+  .catch(err => {
+    console.error("MongoDB connection error:", err);
+    // Don't crash the server on DB connection failure
+  });
 
 // Serve static files in production
 if (process.env.NODE_ENV === "production") {

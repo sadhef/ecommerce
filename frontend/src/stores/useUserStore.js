@@ -24,9 +24,11 @@ export const useUserStore = create((set, get) => ({
       }
       
       set({ user: res.data, loading: false });
+      toast.success("Account created successfully!");
     } catch (error) {
       set({ loading: false });
-      toast.error(error.response?.data?.message || "An error occurred");
+      console.error("Signup error:", error);
+      toast.error(error.response?.data?.message || "Failed to create account");
     }
   },
   
@@ -34,6 +36,14 @@ export const useUserStore = create((set, get) => ({
     set({ loading: true });
 
     try {
+      // First try debug login to see if we get a response
+      try {
+        await axios.post("/auth/debug-login", { test: true });
+      } catch (debugError) {
+        console.log("Debug login test failed:", debugError);
+      }
+      
+      // Now try the real login
       const res = await axios.post("/auth/login", { email, password });
       
       // Store token in localStorage
@@ -42,27 +52,29 @@ export const useUserStore = create((set, get) => ({
       }
 
       set({ user: res.data, loading: false });
+      toast.success("Logged in successfully!");
     } catch (error) {
       set({ loading: false });
-      toast.error(error.response?.data?.message || "An error occurred");
+      console.error("Login error:", error);
+      
+      // Show a detailed error message for debugging
+      if (error.response) {
+        toast.error(`Login failed: ${error.response.data?.message || error.response.status}`);
+      } else {
+        toast.error("Login failed. Please try again.");
+      }
     }
   },
 
   logout: async () => {
     try {
-      // First try to log out on the server (if we're authenticated)
-      try {
-        await axios.post("/auth/logout");
-      } catch (error) {
-        // Continue with local logout even if server logout fails
-        console.log("Server logout failed, continuing with local logout");
-      }
-      
       // Remove token from localStorage
       localStorage.removeItem('token');
       
       set({ user: null });
+      toast.success("Logged out successfully");
     } catch (error) {
+      console.error("Logout error:", error);
       toast.error("Failed to log out properly");
     }
   },
