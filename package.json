@@ -5,14 +5,14 @@
   "main": "index.js",
   "scripts": {
     "start": "cd backend && npm start",
-    "build": "cd frontend && npm install && npm run build",
+    "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "cd backend && npm install",
     "build:frontend": "cd frontend && npm install && npm run build",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "seed": "cd backend && node seed.js",
-    "vercel-build": "npm run build"
+    "vercel-build": "echo 'Root build step complete'"
   },
   "keywords": ["ecommerce", "mern", "react", "express", "mongodb"],
   "author": "",
@@ -21,6 +21,6 @@
     "concurrently": "^8.2.2"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": "18.x"
   }
 }
