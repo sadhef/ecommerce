@@ -11,11 +11,24 @@ const axiosInstance = axios.create({
   timeout: 15000, // 15 seconds timeout (increased for serverless cold starts)
 });
 
-// Add interceptor to include auth tokens from localStorage in request headers
+// Function to get tokens from multiple storage types
+const getToken = (key) => {
+  // Try localStorage first
+  let token = localStorage.getItem(key);
+  
+  // If not found in localStorage, try sessionStorage
+  if (!token) {
+    token = sessionStorage.getItem(key);
+  }
+  
+  return token;
+};
+
+// Add interceptor to include auth tokens from storage in request headers
 axiosInstance.interceptors.request.use(
   (config) => {
-    const accessToken = localStorage.getItem('accessToken');
-    const refreshToken = localStorage.getItem('refreshToken');
+    const accessToken = getToken('accessToken');
+    const refreshToken = getToken('refreshToken');
     
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
@@ -23,6 +36,24 @@ axiosInstance.interceptors.request.use(
     
     if (refreshToken) {
       config.headers['X-Refresh-Token'] = refreshToken;
+    }
+    
+    // For mobile browsers, also include token in the request body for POST/PUT/PATCH
+    if (accessToken && ['post', 'put', 'patch'].includes(config.method?.toLowerCase())) {
+      // Make sure we have a data object to add the token to
+      config.data = config.data || {};
+      
+      // Add the token to the body if it's not already there
+      if (typeof config.data === 'object' && !config.data.accessToken) {
+        // If data is FormData, append the token
+        if (config.data instanceof FormData) {
+          config.data.append('accessToken', accessToken);
+        } 
+        // If data is JSON object, add the token property
+        else {
+          config.data.accessToken = accessToken;
+        }
+      }
     }
     
     return config;
@@ -42,7 +73,7 @@ axiosInstance.interceptors.response.use(
       
       try {
         // Try to refresh the token
-        const refreshToken = localStorage.getItem('refreshToken');
+        const refreshToken = getToken('refreshToken');
         
         if (refreshToken) {
           const res = await axios.post(`${baseURL}/auth/refresh-token`, {}, {
@@ -53,11 +84,34 @@ axiosInstance.interceptors.response.use(
           
           // If token refresh was successful
           if (res.data.accessToken) {
-            // Store the new token
+            // Store the new token in both localStorage and sessionStorage
             localStorage.setItem('accessToken', res.data.accessToken);
+            sessionStorage.setItem('accessToken', res.data.accessToken);
             
             // Update the original request with the new token
             originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
+            
+            // If the original request was a POST/PUT/PATCH, add token to body as well
+            if (['post', 'put', 'patch'].includes(originalRequest.method?.toLowerCase())) {
+              // Make sure we have a data object
+              originalRequest.data = originalRequest.data || {};
+              
+              // Add the new token to the body
+              if (typeof originalRequest.data === 'object') {
+                if (originalRequest.data instanceof FormData) {
+                  // For FormData, first remove any existing token and then add the new one
+                  try {
+                    originalRequest.data.delete('accessToken');
+                  } catch (e) {
+                    // Ignore errors if the key doesn't exist
+                  }
+                  originalRequest.data.append('accessToken', res.data.accessToken);
+                } else {
+                  // For JSON objects
+                  originalRequest.data.accessToken = res.data.accessToken;
+                }
+              }
+            }
             
             // Retry the original request
             return axios(originalRequest);
@@ -68,6 +122,8 @@ axiosInstance.interceptors.response.use(
         // If refresh failed, clear tokens
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
+        sessionStorage.removeItem('accessToken');
+        sessionStorage.removeItem('refreshToken');
       }
     }
     

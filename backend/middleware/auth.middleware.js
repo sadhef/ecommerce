@@ -3,15 +3,33 @@ import User from "../models/user.model.js";
 
 export const protectRoute = async (req, res, next) => {
   try {
-    // Try to get token from cookies OR Authorization header
-    let accessToken = req.cookies.accessToken;
+    // Try to get token from multiple sources
+    let accessToken = null;
     
-    // If no cookie, check for token in Authorization header
+    // 1. Check cookies
+    if (req.cookies && req.cookies.accessToken) {
+      accessToken = req.cookies.accessToken;
+    }
+    
+    // 2. Check Authorization header
     if (!accessToken && req.headers.authorization) {
       const authHeader = req.headers.authorization;
       if (authHeader.startsWith("Bearer ")) {
         accessToken = authHeader.substring(7);
+      } else {
+        // If the header doesn't start with Bearer, use it directly
+        accessToken = authHeader;
       }
+    }
+    
+    // 3. Check if token is passed as a query parameter (for testing/debugging)
+    if (!accessToken && req.query && req.query.token) {
+      accessToken = req.query.token;
+    }
+    
+    // 4. Check if token is in the body (some mobile browsers might send it this way)
+    if (!accessToken && req.body && req.body.accessToken) {
+      accessToken = req.body.accessToken;
     }
 
     if (!accessToken) {
@@ -29,6 +47,8 @@ export const protectRoute = async (req, res, next) => {
       req.user = user;
       next();
     } catch (error) {
+      console.log("Token verification error:", error.name, error.message);
+      
       if (error.name === "TokenExpiredError") {
         return res.status(401).json({ message: "Unauthorized - Access token expired" });
       }

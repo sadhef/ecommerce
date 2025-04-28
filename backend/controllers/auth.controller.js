@@ -18,6 +18,7 @@ const storeRefreshToken = async (userId, refreshToken) => {
   await User.findByIdAndUpdate(userId, { refreshToken });
 };
 
+// Set cookies with appropriate options
 const setCookies = (res, accessToken, refreshToken) => {
   // For Vercel deployment with separate frontend/backend
   const cookieOptions = {
@@ -33,6 +34,7 @@ const setCookies = (res, accessToken, refreshToken) => {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   };
 
+  // Set cookies (these may not work on all mobile browsers)
   res.cookie("accessToken", accessToken, cookieOptions);
   res.cookie("refreshToken", refreshToken, refreshCookieOptions);
 };
@@ -51,14 +53,16 @@ export const signup = async (req, res) => {
     const { accessToken, refreshToken } = generateTokens(user._id);
     await storeRefreshToken(user._id, refreshToken);
 
+    // Set cookies for browsers that support them
     setCookies(res, accessToken, refreshToken);
 
+    // Return tokens in response body for mobile
     res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
-      accessToken, // Send tokens in the response as well
+      accessToken, // Include tokens in response body for mobile clients
       refreshToken
     });
   } catch (error) {
@@ -75,14 +79,17 @@ export const login = async (req, res) => {
     if (user && (await user.comparePassword(password))) {
       const { accessToken, refreshToken } = generateTokens(user._id);
       await storeRefreshToken(user._id, refreshToken);
+      
+      // Set cookies for browsers that support them
       setCookies(res, accessToken, refreshToken);
 
+      // Return tokens in body for mobile apps
       res.json({
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        accessToken, // Send tokens in the response as well
+        accessToken,
         refreshToken
       });
     } else {
@@ -96,7 +103,11 @@ export const login = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken || req.headers['x-refresh-token'];
+    // Get refresh token from various possible sources
+    const refreshToken = 
+      req.cookies.refreshToken || 
+      req.headers['x-refresh-token'] || 
+      (req.body && req.body.refreshToken);
     
     if (refreshToken) {
       try {
@@ -128,7 +139,11 @@ export const logout = async (req, res) => {
 // this will refresh the access token
 export const refreshToken = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken || req.headers['x-refresh-token'];
+    // Get refresh token from various possible sources
+    const refreshToken = 
+      req.cookies.refreshToken || 
+      req.headers['x-refresh-token'] || 
+      (req.body && req.body.refreshToken);
 
     if (!refreshToken) {
       return res.status(401).json({ message: "No refresh token provided" });
@@ -155,9 +170,10 @@ export const refreshToken = async (req, res) => {
 
     res.cookie("accessToken", accessToken, cookieOptions);
 
+    // Return token in response body for mobile clients
     res.json({ 
       message: "Token refreshed successfully",
-      accessToken // Send token in response as well
+      accessToken
     });
   } catch (error) {
     console.log("Error in refreshToken controller", error.message);

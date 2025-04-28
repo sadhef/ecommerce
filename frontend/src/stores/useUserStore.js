@@ -22,9 +22,15 @@ export const useUserStore = create((set, get) => ({
       // Store tokens in localStorage for use with API calls
       if (res.data.accessToken) {
         localStorage.setItem('accessToken', res.data.accessToken);
+        
+        // Also store in sessionStorage for cross-browser compatibility
+        sessionStorage.setItem('accessToken', res.data.accessToken);
       }
       if (res.data.refreshToken) {
         localStorage.setItem('refreshToken', res.data.refreshToken);
+        
+        // Also store in sessionStorage for cross-browser compatibility
+        sessionStorage.setItem('refreshToken', res.data.refreshToken);
       }
       
       // Store only user data in state, not tokens
@@ -52,12 +58,14 @@ export const useUserStore = create((set, get) => ({
     try {
       const res = await axios.post("/auth/login", { email, password });
       
-      // Store tokens in localStorage for use with API calls
+      // Store tokens in both localStorage and sessionStorage
       if (res.data.accessToken) {
         localStorage.setItem('accessToken', res.data.accessToken);
+        sessionStorage.setItem('accessToken', res.data.accessToken);
       }
       if (res.data.refreshToken) {
         localStorage.setItem('refreshToken', res.data.refreshToken);
+        sessionStorage.setItem('refreshToken', res.data.refreshToken);
       }
       
       // Store only user data in state, not tokens
@@ -89,9 +97,11 @@ export const useUserStore = create((set, get) => ({
         console.log("Server logout failed, continuing with client logout");
       }
       
-      // Always clear tokens from localStorage
+      // Clear tokens from both localStorage and sessionStorage
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      sessionStorage.removeItem('accessToken');
+      sessionStorage.removeItem('refreshToken');
       
       set({ user: null, loading: false, error: null });
       toast.success("Logged out successfully");
@@ -99,9 +109,11 @@ export const useUserStore = create((set, get) => ({
     } catch (error) {
       console.error("Error during logout:", error);
       
-      // Still clear tokens and user state on client side even if server logout fails
+      // Still clear tokens and user state on client side
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      sessionStorage.removeItem('accessToken');
+      sessionStorage.removeItem('refreshToken');
       set({ user: null, loading: false, error: null });
       
       return true; // Return true anyway as the user is effectively logged out
@@ -111,8 +123,8 @@ export const useUserStore = create((set, get) => ({
   checkAuth: async () => {
     set({ checkingAuth: true });
     
-    // Check if we have a token stored locally
-    const accessToken = localStorage.getItem('accessToken');
+    // Check if we have a token in either localStorage or sessionStorage
+    const accessToken = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
     
     if (!accessToken) {
       set({ user: null, checkingAuth: false, error: null });
@@ -128,9 +140,10 @@ export const useUserStore = create((set, get) => ({
       
       // Clear invalid tokens
       localStorage.removeItem('accessToken');
+      sessionStorage.removeItem('accessToken');
       
       // Try to refresh token before giving up
-      const refreshToken = localStorage.getItem('refreshToken');
+      const refreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
       if (refreshToken) {
         try {
           await get().refreshToken();
@@ -142,12 +155,14 @@ export const useUserStore = create((set, get) => ({
           } catch (retryError) {
             // Still failed after token refresh
             localStorage.removeItem('refreshToken');
+            sessionStorage.removeItem('refreshToken');
             set({ user: null, checkingAuth: false, error: null });
             return false;
           }
         } catch (refreshError) {
           // Refresh token failed too, clear it
           localStorage.removeItem('refreshToken');
+          sessionStorage.removeItem('refreshToken');
         }
       }
       
@@ -162,7 +177,7 @@ export const useUserStore = create((set, get) => ({
 
     set({ checkingAuth: true });
     
-    const refreshToken = localStorage.getItem('refreshToken');
+    const refreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
     
     if (!refreshToken) {
       set({ user: null, checkingAuth: false, error: "No refresh token" });
@@ -170,7 +185,7 @@ export const useUserStore = create((set, get) => ({
     }
     
     try {
-      // Don't use the axios instance with interceptors to avoid loops
+      // Use native fetch instead of axios to avoid interceptors
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://ecommerce-h3q3.vercel.app'}/auth/refresh-token`, {
         method: 'POST',
         headers: {
@@ -186,7 +201,9 @@ export const useUserStore = create((set, get) => ({
       const data = await response.json();
       
       if (data.accessToken) {
+        // Store in both localStorage and sessionStorage
         localStorage.setItem('accessToken', data.accessToken);
+        sessionStorage.setItem('accessToken', data.accessToken);
         set({ checkingAuth: false, error: null });
         return true;
       } else {
@@ -197,6 +214,8 @@ export const useUserStore = create((set, get) => ({
       // Clear invalid tokens
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+      sessionStorage.removeItem('accessToken');
+      sessionStorage.removeItem('refreshToken');
       set({ user: null, checkingAuth: false, error: "Session expired" });
       return false;
     }
