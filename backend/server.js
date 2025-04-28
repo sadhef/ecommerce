@@ -56,12 +56,12 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
-// Serve static files if in production
+// For Vercel deployment - handle static files
+const frontendBuildPath = path.resolve(__dirname, '../../frontend/dist');
+
+// Serve static files 
 if (process.env.NODE_ENV === "production") {
   // Set static folder
-  const frontendBuildPath = path.resolve(__dirname, '../frontend/dist');
-  
-  // Serve static files
   app.use(express.static(frontendBuildPath));
   
   // Handle SPA routing - redirect all non-API routes to React app

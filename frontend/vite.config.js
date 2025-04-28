@@ -8,13 +8,18 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://localhost:5000",
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, '/api')
       },
     },
+    host: true,
+    port: 5173,
   },
   build: {
     outDir: "dist",
     assetsDir: "assets",
-    emptyOutDir: true
+    emptyOutDir: true,
+    sourcemap: process.env.NODE_ENV !== 'production'
   }
 });

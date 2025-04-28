@@ -1,31 +1,26 @@
 {
-    "name": "ri-carts-ecommerce",
-    "version": "1.0.0",
-    "description": "MERN Stack E-commerce Application",
-    "main": "backend/server.js",
-    "scripts": {
-      "start": "node backend/server.js",
-      "install-server": "cd backend && npm install",
-      "install-client": "cd frontend && npm install",
-      "install": "npm run install-server && npm run install-client",
-      "build-client": "cd frontend && npm run build",
-      "build": "npm run build-client",
-      "dev-server": "cd backend && npm run dev",
-      "dev-client": "cd frontend && npm run dev",
-      "dev": "concurrently \"npm run dev-server\" \"npm run dev-client\""
-    },
-    "type": "module",
-    "keywords": [
-      "mern",
-      "react",
-      "nodejs",
-      "express",
-      "mongodb",
-      "ecommerce"
-    ],
-    "author": "",
-    "license": "ISC",
-    "devDependencies": {
-      "concurrently": "^8.2.2"
-    }
+  "name": "ri-carts-ecommerce",
+  "version": "1.0.0",
+  "description": "Fashion e-commerce platform",
+  "main": "index.js",
+  "scripts": {
+    "start": "cd backend && npm start",
+    "build": "cd frontend && npm install && npm run build",
+    "build:backend": "cd backend && npm install",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "seed": "cd backend && node seed.js",
+    "vercel-build": "npm run build"
+  },
+  "keywords": ["ecommerce", "mern", "react", "express", "mongodb"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
+}
