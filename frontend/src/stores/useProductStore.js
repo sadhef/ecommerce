@@ -39,9 +39,9 @@ export const useProductStore = create((set, get) => ({
       });
       return response.data.products;
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to fetch products";
-      set({ error: errorMessage, loading: false });
-      toast.error(errorMessage);
+      console.error("Failed to fetch products:", error);
+      // Don't show toast for admin-only route failures
+      set({ error: "Failed to fetch products", loading: false });
       return [];
     }
   },
@@ -57,9 +57,10 @@ export const useProductStore = create((set, get) => ({
       });
       return response.data.products;
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to fetch products";
-      set({ error: errorMessage, loading: false });
-      toast.error(errorMessage);
+      console.error("Failed to fetch products by category:", error);
+      set({ error: "Failed to fetch products", loading: false });
+      // Instead of showing error, set empty products
+      set({ products: [], loading: false });
       return [];
     }
   },
@@ -110,40 +111,25 @@ export const useProductStore = create((set, get) => ({
     try {
       const response = await axios.get("/products/featured");
       
-      if (!response.data || response.data.length === 0) {
-        // If no featured products, fetch all instead
-        const allProducts = await axios.get("/products");
-        set({ 
-          products: allProducts.data.products || [], 
-          loading: false,
-          error: null
-        });
-        return allProducts.data.products;
+      // Handle potential empty response gracefully
+      if (!response.data || (Array.isArray(response.data) && response.data.length === 0)) {
+        set({ products: [], loading: false, error: null });
+        return [];
       }
       
       set({ 
-        products: response.data, 
+        products: Array.isArray(response.data) ? response.data : [], 
         loading: false,
         error: null 
       });
       return response.data;
     } catch (error) {
-      console.log("Error fetching featured products:", error);
+      console.error("Error fetching featured products:", error);
       
-      // On error, try fetching all products as fallback
-      try {
-        const fallbackResponse = await axios.get("/products");
-        set({ 
-          products: fallbackResponse.data.products || [],
-          loading: false,
-          error: null
-        });
-        return fallbackResponse.data.products;
-      } catch (fallbackError) {
-        const errorMessage = "Failed to fetch products";
-        set({ error: errorMessage, loading: false });
-        return [];
-      }
+      // Don't show error toast for this public route
+      // Just set empty products
+      set({ products: [], loading: false, error: null });
+      return [];
     }
   },
   

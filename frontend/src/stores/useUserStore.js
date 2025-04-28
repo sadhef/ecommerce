@@ -27,7 +27,15 @@ export const useUserStore = create((set, get) => ({
         localStorage.setItem('refreshToken', res.data.refreshToken);
       }
       
-      set({ user: res.data, loading: false, error: null });
+      // Store only user data in state, not tokens
+      const userData = {
+        _id: res.data._id,
+        name: res.data.name,
+        email: res.data.email,
+        role: res.data.role
+      };
+      
+      set({ user: userData, loading: false, error: null });
       toast.success("Signup successful!");
       return true;
     } catch (error) {
@@ -52,7 +60,15 @@ export const useUserStore = create((set, get) => ({
         localStorage.setItem('refreshToken', res.data.refreshToken);
       }
       
-      set({ user: res.data, loading: false, error: null });
+      // Store only user data in state, not tokens
+      const userData = {
+        _id: res.data._id,
+        name: res.data.name,
+        email: res.data.email,
+        role: res.data.role
+      };
+      
+      set({ user: userData, loading: false, error: null });
       toast.success("Login successful!");
       return true;
     } catch (error) {
@@ -66,9 +82,14 @@ export const useUserStore = create((set, get) => ({
   logout: async () => {
     set({ loading: true });
     try {
-      await axios.post("/auth/logout");
+      // Try to logout from server, but continue even if it fails
+      try {
+        await axios.post("/auth/logout");
+      } catch (serverError) {
+        console.log("Server logout failed, continuing with client logout");
+      }
       
-      // Clear tokens from localStorage
+      // Always clear tokens from localStorage
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       
@@ -76,16 +97,14 @@ export const useUserStore = create((set, get) => ({
       toast.success("Logged out successfully");
       return true;
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "An error occurred during logout";
-      set({ loading: false, error: errorMessage });
-      toast.error(errorMessage);
+      console.error("Error during logout:", error);
       
       // Still clear tokens and user state on client side even if server logout fails
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
-      set({ user: null });
+      set({ user: null, loading: false, error: null });
       
-      return false;
+      return true; // Return true anyway as the user is effectively logged out
     }
   },
 
@@ -106,6 +125,32 @@ export const useUserStore = create((set, get) => ({
       return true;
     } catch (error) {
       console.log("Auth check: User not authenticated");
+      
+      // Clear invalid tokens
+      localStorage.removeItem('accessToken');
+      
+      // Try to refresh token before giving up
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (refreshToken) {
+        try {
+          await get().refreshToken();
+          // If refresh succeeded, try again to get profile
+          try {
+            const retryResponse = await axios.get("/auth/profile");
+            set({ user: retryResponse.data, checkingAuth: false, error: null });
+            return true;
+          } catch (retryError) {
+            // Still failed after token refresh
+            localStorage.removeItem('refreshToken');
+            set({ user: null, checkingAuth: false, error: null });
+            return false;
+          }
+        } catch (refreshError) {
+          // Refresh token failed too, clear it
+          localStorage.removeItem('refreshToken');
+        }
+      }
+      
       set({ user: null, checkingAuth: false, error: null });
       return false;
     }
@@ -125,19 +170,31 @@ export const useUserStore = create((set, get) => ({
     }
     
     try {
-      const response = await axios.post("/auth/refresh-token", {}, {
+      // Don't use the axios instance with interceptors to avoid loops
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://ecommerce-h3q3.vercel.app'}/auth/refresh-token`, {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'X-Refresh-Token': refreshToken
         }
       });
       
-      if (response.data.accessToken) {
-        localStorage.setItem('accessToken', response.data.accessToken);
+      if (!response.ok) {
+        throw new Error('Refresh token failed');
       }
       
-      set({ checkingAuth: false, error: null });
-      return true;
+      const data = await response.json();
+      
+      if (data.accessToken) {
+        localStorage.setItem('accessToken', data.accessToken);
+        set({ checkingAuth: false, error: null });
+        return true;
+      } else {
+        throw new Error('No access token in response');
+      }
     } catch (error) {
+      console.error("Error refreshing token:", error);
+      // Clear invalid tokens
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       set({ user: null, checkingAuth: false, error: "Session expired" });

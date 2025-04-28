@@ -10,7 +10,7 @@ let featuredProductsCache = {
 
 export const getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find({}); // find all products
+    const products = await Product.find({}).lean();
     res.json({ products });
   } catch (error) {
     console.log("Error in getAllProducts controller", error.message);
@@ -27,12 +27,22 @@ export const getFeaturedProducts = async (req, res) => {
       return res.json(featuredProductsCache.data);
     }
 
-    // If no cache or expired, fetch from database
-    const featuredProducts = await Product.find({ isFeatured: true }).lean();
+    // If no cache or expired, fetch from database with shorter timeout
+    const featuredProducts = await Promise.race([
+      Product.find({ isFeatured: true }).lean().exec(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Featured products query timeout')), 5000)
+      )
+    ]);
 
     // If no featured products found, return all products (limited to 8)
     if (!featuredProducts || featuredProducts.length === 0) {
-      const allProducts = await Product.find({}).limit(8).lean();
+      const allProducts = await Promise.race([
+        Product.find({}).limit(8).lean().exec(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('All products query timeout')), 5000)
+        )
+      ]);
       
       // Update cache with all products
       featuredProductsCache = {
@@ -54,6 +64,14 @@ export const getFeaturedProducts = async (req, res) => {
     res.json(featuredProducts);
   } catch (error) {
     console.log("Error in getFeaturedProducts controller", error.message);
+    
+    // Try to return cached data even if expired as a fallback
+    if (featuredProductsCache.data) {
+      console.log("Returning expired cache data as fallback");
+      return res.json(featuredProductsCache.data);
+    }
+    
+    // Return empty array as last resort
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -130,25 +148,30 @@ export const deleteProduct = async (req, res) => {
 
 export const getRecommendedProducts = async (req, res) => {
   try {
-    const products = await Product.aggregate([
-      {
-        $sample: { size: 4 },
-      },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          description: 1,
-          image: 1,
-          price: 1,
+    // Try to get some random products with a timeout
+    const products = await Promise.race([
+      Product.aggregate([
+        { $sample: { size: 4 } },
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            description: 1,
+            image: 1,
+            price: 1,
+          },
         },
-      },
+      ]).exec(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Recommended products query timeout')), 5000)
+      )
     ]);
 
     res.json(products);
   } catch (error) {
     console.log("Error in getRecommendedProducts controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    // Return empty array instead of error to prevent frontend issues
+    res.json([]);
   }
 };
 
@@ -159,16 +182,19 @@ export const getProductsByCategory = async (req, res) => {
       return res.status(400).json({ message: "Category parameter is required" });
     }
     
-    const products = await Product.find({ category });
-    
-    if (!products || products.length === 0) {
-      return res.json({ products: [] });
-    }
+    // Find products with a timeout
+    const products = await Promise.race([
+      Product.find({ category }).lean().exec(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Category products query timeout')), 5000)
+      )
+    ]);
     
     res.json({ products });
   } catch (error) {
     console.log("Error in getProductsByCategory controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    // Return empty products array to prevent frontend issues
+    res.json({ products: [] });
   }
 };
 

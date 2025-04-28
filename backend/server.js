@@ -1,9 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
-import path from "path";
-import { fileURLToPath } from 'url';
 import cors from "cors";
+import { connectDB } from "./lib/db.js";
 
 import authRoutes from "./routes/auth.route.js";
 import productRoutes from "./routes/product.route.js";
@@ -12,41 +11,51 @@ import couponRoutes from "./routes/coupon.route.js";
 import paymentRoutes from "./routes/payment.route.js";
 import analyticsRoutes from "./routes/analytics.route.js";
 
-import { connectDB } from "./lib/db.js";
-
+// Load environment variables
 dotenv.config();
 
+// Initialize express app
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Handle __dirname in ES module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Connect to MongoDB immediately on startup
+// Use an IIFE to allow async/await
+(async () => {
+  try {
+    await connectDB();
+    console.log("MongoDB connected successfully on server startup");
+  } catch (error) {
+    console.error("Initial MongoDB connection failed:", error.message);
+    // Continue execution - serverless functions will retry connection when needed
+  }
+})();
 
 // Middleware setup
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// CORS configuration with proper settings for credentials
+// CORS configuration
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
+    // Allow all origins in development or if no origin (like Postman requests)
+    if (!origin || process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
     
-    // Define allowed origins
+    // Define allowed origins for production
     const allowedOrigins = [
-      'http://localhost:5173',                  // Local frontend
-      'https://ri-carts.vercel.app',            // Production frontend
-      process.env.CLIENT_URL,                   // Environment variable frontend
-    ].filter(Boolean); // Remove any undefined values
+      'https://ri-carts.vercel.app',
+      process.env.CLIENT_URL,
+    ].filter(Boolean);
     
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(null, true); // Allow all origins in case the list is incomplete
+      // Allow all origins for now to debug
+      callback(null, true);
     }
   },
-  credentials: true, // Important for cookies
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Refresh-Token', 'X-Requested-With']
 }));
@@ -54,12 +63,12 @@ app.use(cors({
 // Add preflight response for OPTIONS requests
 app.options('*', cors());
 
-// Simple route to verify API is working
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ message: 'API is running' });
 });
 
-// API routes - no /api prefix since the entire backend is the API
+// API routes
 app.use("/auth", authRoutes);
 app.use("/products", productRoutes);
 app.use("/cart", cartRoutes);
@@ -67,31 +76,15 @@ app.use("/coupons", couponRoutes);
 app.use("/payments", paymentRoutes);
 app.use("/analytics", analyticsRoutes);
 
-// Connect to MongoDB (with connection reuse for serverless)
-let isConnected = false;
-
-const connectToDatabase = async (req, res, next) => {
-  if (isConnected) {
-    return next();
-  }
-  
-  try {
-    await connectDB();
-    isConnected = true;
-    return next();
-  } catch (error) {
-    console.error("Error connecting to database:", error);
-    return res.status(500).json({ error: "Database connection failed" });
-  }
-};
-
-// Apply database connection middleware to all routes
-app.use(connectToDatabase);
-
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong on the server!', error: err.message });
+  console.error("Server error:", err.stack);
+  res.status(500).json({ 
+    message: 'Something went wrong on the server!', 
+    error: err.message,
+    // Include more details in development
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
 });
 
 // Start server for development

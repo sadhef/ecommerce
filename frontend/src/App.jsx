@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "react-hot-toast";
 
 // Pages
@@ -24,27 +24,39 @@ function App() {
   const { user, checkAuth, checkingAuth, error: authError } = useUserStore();
   const { getCartItems } = useCartStore();
   const navigate = useNavigate();
+  const [initialCheckDone, setInitialCheckDone] = useState(false);
   
   // Check authentication on app load
   useEffect(() => {
-    checkAuth();
+    const checkUserAuth = async () => {
+      try {
+        await checkAuth();
+      } catch (error) {
+        console.error("Auth check error:", error);
+      } finally {
+        setInitialCheckDone(true);
+      }
+    };
+    
+    checkUserAuth();
   }, [checkAuth]);
 
   // Load cart items when user is authenticated
   useEffect(() => {
     if (user) {
-      getCartItems();
+      getCartItems().catch(err => console.error("Error fetching cart:", err));
     }
   }, [getCartItems, user]);
 
   // Handle authentication errors
   useEffect(() => {
-    if (authError === "Session expired") {
+    if (authError === "Session expired" && initialCheckDone) {
       navigate("/login");
     }
-  }, [authError, navigate]);
+  }, [authError, navigate, initialCheckDone]);
 
-  if (checkingAuth) return <LoadingSpinner />;
+  // Show loading spinner only during initial auth check
+  if (checkingAuth && !initialCheckDone) return <LoadingSpinner />;
 
   return (
     <div className="min-h-screen bg-[#2D1C24] text-white relative overflow-hidden">
