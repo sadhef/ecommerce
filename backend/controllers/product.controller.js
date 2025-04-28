@@ -81,25 +81,38 @@ export const createProduct = async (req, res) => {
     const { name, description, price, image, category } = req.body;
 
     if (!name || !description || !price || !category) {
-      return res.status(400).json({ message: "All fields are required" });
+      return res.status(400).json({ message: "Required fields are missing" });
     }
 
-    let cloudinaryResponse = null;
+    let imageUrl = ""; // Default empty string instead of placeholder
 
-    if (image) {
+    // Only try to upload to Cloudinary if we have an image string
+    if (image && image.trim() !== '') {
       try {
-        cloudinaryResponse = await cloudinary.uploader.upload(image, { folder: "products" });
+        // Check if it's a valid base64 image
+        if (image.startsWith('data:image')) {
+          const cloudinaryResponse = await cloudinary.uploader.upload(image, { 
+            folder: "products",
+            timeout: 60000 // 60 second timeout
+          });
+          
+          if (cloudinaryResponse && cloudinaryResponse.secure_url) {
+            imageUrl = cloudinaryResponse.secure_url;
+            console.log("Image uploaded successfully:", imageUrl);
+          }
+        }
       } catch (uploadError) {
         console.log("Error uploading to Cloudinary:", uploadError);
         // Continue with empty image URL if Cloudinary fails
       }
     }
 
+    // Create the product with the image URL (could be empty string)
     const product = await Product.create({
       name,
       description,
       price,
-      image: cloudinaryResponse?.secure_url ? cloudinaryResponse.secure_url : "",
+      image: imageUrl,
       category,
     });
 
@@ -123,9 +136,10 @@ export const deleteProduct = async (req, res) => {
     }
 
     if (product.image) {
-      const publicId = product.image.split("/").pop().split(".")[0];
       try {
-        await cloudinary.uploader.destroy(`products/${publicId}`);
+        // Extract the public ID from the Cloudinary URL
+        const publicId = product.image.split('/').slice(-2).join('/').split('.')[0];
+        await cloudinary.uploader.destroy(publicId);
         console.log("deleted image from cloudinary");
       } catch (error) {
         console.log("error deleting image from cloudinary", error);
