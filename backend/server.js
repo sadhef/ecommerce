@@ -34,45 +34,46 @@ const PORT = process.env.PORT || 5000;
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// CORS configuration - UPDATED TO ALLOW ALL ORIGINS FOR NOW
-app.use(cors({
+// CORS configuration - Allow specific origins
+const corsOptions = {
   origin: function(origin, callback) {
-    // Allow all origins in development
-    if (!origin || process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
-    
-    // List all possible frontend URLs - MAKE SURE YOUR ACTUAL FRONTEND URL IS HERE
+    // List all possible frontend URLs
     const allowedOrigins = [
       'https://ri-cart.vercel.app',
       'https://ri-carts.vercel.app',
       'https://ecommerce-h3q3.vercel.app',
-      process.env.CLIENT_URL,
-    ].filter(Boolean);
+      'http://localhost:5173', // Development frontend
+      undefined, // For same-origin requests or Postman
+    ];
     
-    // Check if the origin is in the allowed list
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || !origin || process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
-      // For debugging purposes - allow all origins temporarily
-      console.log(`Origin ${origin} not in allowed list ${allowedOrigins}, but allowing for debugging`);
-      callback(null, true);
+      console.log(`Origin ${origin} not in allowed list`);
+      callback(null, true); // Allow all origins for now, but log them
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Refresh-Token', 'X-Requested-With']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Refresh-Token', 'X-Requested-With'],
+  exposedHeaders: ['Set-Cookie']
+};
+
+app.use(cors(corsOptions));
 
 // Add preflight response for OPTIONS requests
-app.options('*', cors());
+app.options('*', cors(corsOptions));
 
 // Add explicit CORS headers for all routes as a backup
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const origin = req.headers.origin;
+  if (corsOptions.origin(origin, (err, allowed) => allowed)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Refresh-Token');
+  res.header('Access-Control-Expose-Headers', 'Set-Cookie');
   next();
 });
 
@@ -84,13 +85,21 @@ app.use(async (req, res, next) => {
       return next();
     }
     
-    await ensureDbConnected();
+    const isConnected = await ensureDbConnected();
+    if (!isConnected) {
+      return res.status(503).json({ 
+        message: 'Database service temporarily unavailable. Please try again later.', 
+        status: 'disconnected',
+        serverTime: new Date().toISOString()
+      });
+    }
     next();
   } catch (error) {
     console.error("Database connection error in middleware:", error.message);
     return res.status(503).json({ 
       message: 'Database service unavailable', 
-      error: error.message 
+      error: error.message,
+      serverTime: new Date().toISOString()
     });
   }
 });
@@ -102,13 +111,17 @@ app.get(['/health', '/api/health'], (req, res) => {
   if (dbStatus.readyState === 1) {
     res.status(200).json({ 
       message: 'API is running',
-      database: dbStatus
+      database: dbStatus,
+      serverTime: new Date().toISOString(),
+      env: process.env.NODE_ENV
     });
   } else {
     // Return 200 but indicate DB is not connected
     res.status(200).json({ 
       message: 'API is running but database is not fully connected',
-      database: dbStatus
+      database: dbStatus,
+      serverTime: new Date().toISOString(),
+      env: process.env.NODE_ENV
     });
   }
 });
@@ -152,12 +165,16 @@ app.use((err, req, res, next) => {
     'Something went wrong on the server!';
   
   // Set CORS headers even in error responses
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const origin = req.headers.origin;
+  if (corsOptions.origin(origin, (err, allowed) => allowed)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Credentials', 'true');
   
   res.status(statusCode).json({ 
     message, 
     error: err.message,
+    serverTime: new Date().toISOString(),
     // Include more details in development
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   });
@@ -166,10 +183,18 @@ app.use((err, req, res, next) => {
 // 404 handler
 app.use((req, res) => {
   // Set CORS headers even in 404 responses
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const origin = req.headers.origin;
+  if (corsOptions.origin(origin, (err, allowed) => allowed)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Credentials', 'true');
   
-  res.status(404).json({ message: 'API endpoint not found' });
+  res.status(404).json({ 
+    message: 'API endpoint not found',
+    path: req.path,
+    method: req.method,
+    serverTime: new Date().toISOString()
+  });
 });
 
 // Start server for development

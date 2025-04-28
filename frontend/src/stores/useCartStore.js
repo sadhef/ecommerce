@@ -19,7 +19,12 @@ export const useCartStore = create((set, get) => ({
     set({ loading: true, error: null });
     try {
       const response = await axios.get("/coupons");
-      set({ coupon: response.data, loading: false, error: null });
+      // Only update state if we have a coupon
+      if (response.data) {
+        set({ coupon: response.data, loading: false, error: null });
+      } else {
+        set({ loading: false, error: null });
+      }
       return response.data;
     } catch (error) {
       console.error("Error fetching coupon:", error);
@@ -35,15 +40,27 @@ export const useCartStore = create((set, get) => ({
       return false;
     }
     
+    // Validate code
+    if (!code || typeof code !== 'string' || code.trim() === '') {
+      toast.error("Please enter a valid coupon code");
+      return false;
+    }
+    
     set({ loading: true, error: null });
     try {
       const response = await axios.post("/coupons/validate", { code });
+      
+      if (!response.data) {
+        throw new Error("Invalid coupon response");
+      }
+      
       set({ 
         coupon: response.data, 
         isCouponApplied: true,
         loading: false,
         error: null
       });
+      
       get().calculateTotals();
       toast.success("Coupon applied successfully");
       return true;
@@ -56,7 +73,7 @@ export const useCartStore = create((set, get) => ({
   },
   
   removeCoupon: () => {
-    set({ coupon: null, isCouponApplied: false, error: null });
+    set({ isCouponApplied: false, error: null });
     get().calculateTotals();
     toast.success("Coupon removed");
     return true;
@@ -69,9 +86,22 @@ export const useCartStore = create((set, get) => ({
     set({ loading: true, error: null });
     try {
       const res = await axios.get("/cart");
-      set({ cart: res.data || [], loading: false, error: null });
+      
+      // Validate response data
+      if (!res.data || !Array.isArray(res.data)) {
+        console.error("Invalid cart data received:", res.data);
+        set({ cart: [], loading: false, error: null });
+        return [];
+      }
+      
+      // Ensure each item has the required properties
+      const validatedCart = res.data.filter(item => 
+        item && item._id && typeof item.price === 'number'
+      );
+      
+      set({ cart: validatedCart, loading: false, error: null });
       get().calculateTotals();
-      return res.data;
+      return validatedCart;
     } catch (error) {
       console.error("Error fetching cart:", error);
       // Don't show error toast for authentication issues
@@ -81,6 +111,16 @@ export const useCartStore = create((set, get) => ({
   },
   
   clearCart: async () => {
+    try {
+      if (useUserStore.getState().user) {
+        // Only attempt API call if user is logged in
+        await axios.delete("/cart");
+      }
+    } catch (error) {
+      console.error("Error clearing cart:", error);
+      // Continue even if API call fails
+    }
+    
     set({ 
       cart: [], 
       coupon: null, 
@@ -89,6 +129,7 @@ export const useCartStore = create((set, get) => ({
       isCouponApplied: false,
       error: null
     });
+    
     return true;
   },
   
@@ -99,18 +140,34 @@ export const useCartStore = create((set, get) => ({
       return false;
     }
     
+    // Validate product
+    if (!product || !product._id) {
+      console.error("Invalid product:", product);
+      toast.error("Invalid product");
+      return false;
+    }
+    
     set({ loading: true, error: null });
     try {
       await axios.post("/cart", { productId: product._id });
       
       set((prevState) => {
         const existingItem = prevState.cart.find((item) => item._id === product._id);
-        const newCart = existingItem
-          ? prevState.cart.map((item) =>
-              item._id === product._id ? { ...item, quantity: item.quantity + 1 } : item
-            )
-          : [...prevState.cart, { ...product, quantity: 1 }];
-        return { cart: newCart, loading: false, error: null };
+        
+        if (existingItem) {
+          // Update quantity for existing item
+          const newCart = prevState.cart.map((item) =>
+            item._id === product._id ? { ...item, quantity: (item.quantity || 1) + 1 } : item
+          );
+          return { cart: newCart, loading: false, error: null };
+        } else {
+          // Add new item
+          return { 
+            cart: [...prevState.cart, { ...product, quantity: 1 }], 
+            loading: false, 
+            error: null 
+          };
+        }
       });
       
       get().calculateTotals();
@@ -118,7 +175,7 @@ export const useCartStore = create((set, get) => ({
       return true;
     } catch (error) {
       console.error("Error adding to cart:", error);
-      const errorMessage = "Failed to add product to cart. Please login and try again.";
+      const errorMessage = "Failed to add product to cart. Please try again.";
       set({ loading: false, error: null }); // Don't set error state
       toast.error(errorMessage);
       return false;
@@ -132,25 +189,32 @@ export const useCartStore = create((set, get) => ({
       return false;
     }
     
+    // Validate productId
+    if (!productId) {
+      console.error("Invalid productId:", productId);
+      return false;
+    }
+    
     set({ loading: true, error: null });
+    
+    // Optimistically update the UI first
+    set((prevState) => ({ 
+      cart: prevState.cart.filter((item) => item._id !== productId),
+      loading: true,
+      error: null
+    }));
+    
     try {
       await axios.delete(`/cart`, { data: { productId } });
-      set((prevState) => ({ 
-        cart: prevState.cart.filter((item) => item._id !== productId),
-        loading: false,
-        error: null
-      }));
+      set({ loading: false });
       get().calculateTotals();
       toast.success("Product removed from cart");
       return true;
     } catch (error) {
       console.error("Error removing from cart:", error);
-      // Optimistically update UI even if API fails
-      set((prevState) => ({ 
-        cart: prevState.cart.filter((item) => item._id !== productId),
-        loading: false,
-        error: null
-      }));
+      
+      // Don't revert the UI - keep the optimistic update
+      set({ loading: false, error: null });
       get().calculateTotals();
       return false;
     }
@@ -163,32 +227,35 @@ export const useCartStore = create((set, get) => ({
       return false;
     }
     
+    // Validate inputs
+    if (!productId || typeof quantity !== 'number') {
+      console.error("Invalid productId or quantity:", { productId, quantity });
+      return false;
+    }
+    
+    // If quantity is 0, remove the item
     if (quantity === 0) {
       return get().removeFromCart(productId);
     }
-
-    set({ loading: true, error: null });
+    
+    // Update optimistically
+    set((prevState) => ({
+      loading: true,
+      cart: prevState.cart.map((item) => 
+        item._id === productId ? { ...item, quantity } : item
+      )
+    }));
+    
     try {
       await axios.put(`/cart/${productId}`, { quantity });
-      set((prevState) => ({
-        cart: prevState.cart.map((item) => 
-          item._id === productId ? { ...item, quantity } : item
-        ),
-        loading: false,
-        error: null
-      }));
+      set({ loading: false, error: null });
       get().calculateTotals();
       return true;
     } catch (error) {
       console.error("Error updating quantity:", error);
-      // Optimistically update UI even if API fails
-      set((prevState) => ({
-        cart: prevState.cart.map((item) => 
-          item._id === productId ? { ...item, quantity } : item
-        ),
-        loading: false,
-        error: null
-      }));
+      
+      // Don't revert the UI - keep the optimistic update
+      set({ loading: false, error: null });
       get().calculateTotals();
       return false;
     }
@@ -196,14 +263,24 @@ export const useCartStore = create((set, get) => ({
   
   calculateTotals: () => {
     const { cart, coupon, isCouponApplied } = get();
-    const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    
+    // Calculate subtotal, handling potential invalid data
+    const subtotal = cart.reduce((sum, item) => {
+      const price = typeof item.price === 'number' ? item.price : 0;
+      const quantity = typeof item.quantity === 'number' ? item.quantity : 1;
+      return sum + (price * quantity);
+    }, 0);
+    
+    // Initialize total with subtotal
     let total = subtotal;
 
-    if (coupon && isCouponApplied) {
+    // Apply coupon discount if available and applied
+    if (coupon && isCouponApplied && typeof coupon.discountPercentage === 'number') {
       const discount = subtotal * (coupon.discountPercentage / 100);
-      total = subtotal - discount;
+      total = Math.max(0, subtotal - discount); // Ensure total is never negative
     }
 
+    // Update state with calculated values
     set({ subtotal, total });
   },
   

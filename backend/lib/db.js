@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 
 // Track connection state
 let isConnected = false;
+let connectionAttempts = 0;
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_INTERVAL = 5000; // 5 seconds
 
 // Connection options
 const connectionOptions = {
@@ -10,17 +13,23 @@ const connectionOptions = {
   maxPoolSize: 10,
   socketTimeoutMS: 45000,
   serverSelectionTimeoutMS: 30000,
-  family: 4 // Use IPv4, skip trying IPv6
+  family: 4, // Use IPv4, skip trying IPv6
+  connectTimeoutMS: 30000
 };
 
 /**
- * Initializes the MongoDB connection
+ * Initializes the MongoDB connection with retry logic
  */
 export const connectDB = async () => {
   // If already connected, return the connection
   if (isConnected && mongoose.connection.readyState === 1) {
     console.log('MongoDB already connected');
     return mongoose.connection;
+  }
+
+  // Reset connection attempts if this is a fresh connection attempt
+  if (mongoose.connection.readyState === 0) {
+    connectionAttempts = 0;
   }
 
   try {
@@ -30,19 +39,27 @@ export const connectDB = async () => {
       throw new Error('MongoDB URI is not defined in environment variables');
     }
 
-    console.log('Connecting to MongoDB...');
+    // Add a database name if not present in the URI
+    let uri = process.env.MONGO_URI;
+    if (!uri.includes('?') && !uri.split('/').pop()) {
+      uri = `${uri}/ecommerce`;
+      console.log('Added default database name to URI');
+    }
+
+    console.log(`Connecting to MongoDB (attempt ${connectionAttempts + 1})...`);
     
     // Debug the URI but hide password
-    const redactedUri = process.env.MONGO_URI.replace(
+    const redactedUri = uri.replace(
       /:([^@]+)@/,
       ':****@'
     );
     console.log(`Using MongoDB URI: ${redactedUri}`);
 
     // Connect with options
-    const conn = await mongoose.connect(process.env.MONGO_URI, connectionOptions);
+    const conn = await mongoose.connect(uri, connectionOptions);
     
     isConnected = true;
+    connectionAttempts = 0; // Reset on successful connection
     console.log(`MongoDB connected successfully: ${conn.connection.host}`);
     
     // Set up event listeners for the connection
@@ -51,7 +68,8 @@ export const connectDB = async () => {
     return conn.connection;
   } catch (error) {
     isConnected = false;
-    console.error(`MongoDB connection error: ${error.message}`);
+    connectionAttempts++;
+    console.error(`MongoDB connection error (attempt ${connectionAttempts}): ${error.message}`);
     
     // Provide more detailed error information
     if (error.name === 'MongoServerSelectionError') {
@@ -62,7 +80,26 @@ export const connectDB = async () => {
       console.error('MongoDB authentication failed - check your username and password');
     }
     
-    throw error;
+    // Retry connection with exponential backoff if under max attempts
+    if (connectionAttempts < MAX_RETRY_ATTEMPTS) {
+      const delay = RETRY_INTERVAL * Math.pow(2, connectionAttempts - 1);
+      console.log(`Retrying connection in ${delay/1000} seconds...`);
+      
+      return new Promise((resolve) => {
+        setTimeout(async () => {
+          try {
+            const result = await connectDB();
+            resolve(result);
+          } catch (retryError) {
+            resolve(null); // Continue execution even if all retries fail
+          }
+        }, delay);
+      });
+    }
+    
+    // Return null after all retries fail to allow the app to start without DB
+    console.error(`Failed to connect to MongoDB after ${MAX_RETRY_ATTEMPTS} attempts`);
+    return null;
   }
 };
 
@@ -82,6 +119,14 @@ function setupConnectionEventListeners() {
   connection.on('disconnected', () => {
     isConnected = false;
     console.log('MongoDB disconnected');
+    
+    // Attempt to reconnect when in production
+    if (process.env.NODE_ENV === 'production') {
+      console.log('Attempting to reconnect to MongoDB...');
+      setTimeout(() => {
+        connectDB().catch(err => console.error('Reconnection failed:', err));
+      }, 5000);
+    }
   });
   
   // If the connection throws an error
@@ -93,13 +138,38 @@ function setupConnectionEventListeners() {
 
 /**
  * Ensures that DB is connected before performing operations
+ * Returns true if connected, false if unable to connect
  */
 export const ensureDbConnected = async () => {
-  if (!isConnected || mongoose.connection.readyState !== 1) {
-    console.log('Connection not established. Connecting to MongoDB...');
-    await connectDB();
+  // If connected, return immediately
+  if (isConnected && mongoose.connection.readyState === 1) {
+    return true;
   }
-  return true;
+  
+  // If disconnected but not connecting, try to connect
+  if (mongoose.connection.readyState !== 2) {
+    console.log('Connection not established. Connecting to MongoDB...');
+    const connection = await connectDB();
+    return connection !== null;
+  }
+  
+  // If already connecting, wait for the connection to complete with timeout
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      console.log('Connection attempt timed out');
+      resolve(false);
+    }, 10000);
+    
+    mongoose.connection.once('connected', () => {
+      clearTimeout(timeout);
+      resolve(true);
+    });
+    
+    mongoose.connection.once('error', () => {
+      clearTimeout(timeout);
+      resolve(false);
+    });
+  });
 };
 
 /**
@@ -117,6 +187,7 @@ export const getConnectionStatus = () => {
     isConnected,
     readyState: mongoose.connection.readyState,
     readyStateText: readyStateMap[mongoose.connection.readyState] || 'unknown',
-    host: mongoose.connection.host || 'none'
+    host: mongoose.connection.host || 'none',
+    database: mongoose.connection.db?.databaseName || 'none'
   };
 };
