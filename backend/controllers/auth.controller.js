@@ -1,6 +1,9 @@
-import { redis } from "../lib/redis.js";
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
+
+// Store refresh tokens in memory (this is not persistent across server restarts)
+// For a production app, you would use a database table instead
+const refreshTokens = new Map();
 
 const generateTokens = (userId) => {
 	const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, {
@@ -15,23 +18,21 @@ const generateTokens = (userId) => {
 };
 
 const storeRefreshToken = async (userId, refreshToken) => {
-	// Updated for @upstash/redis: use object syntax for expiration
-	await redis.set(`refresh_token:${userId}`, refreshToken, {
-		ex: 7 * 24 * 60 * 60 // 7 days in seconds
-	});
+	// Store in memory map instead of Redis
+	refreshTokens.set(userId.toString(), refreshToken);
 };
 
 const setCookies = (res, accessToken, refreshToken) => {
 	res.cookie("accessToken", accessToken, {
 		httpOnly: true, // prevent XSS attacks, cross site scripting attack
 		secure: process.env.NODE_ENV === "production",
-		sameSite: "strict", // prevents CSRF attack, cross-site request forgery attack
+		sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", // Changed to 'none' for cross-site cookies in production
 		maxAge: 15 * 60 * 1000, // 15 minutes
 	});
 	res.cookie("refreshToken", refreshToken, {
 		httpOnly: true, // prevent XSS attacks, cross site scripting attack
 		secure: process.env.NODE_ENV === "production",
-		sameSite: "strict", // prevents CSRF attack, cross-site request forgery attack
+		sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", // Changed to 'none' for cross-site cookies in production
 		maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 	});
 };
@@ -94,11 +95,20 @@ export const logout = async (req, res) => {
 		const refreshToken = req.cookies.refreshToken;
 		if (refreshToken) {
 			const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-			await redis.del(`refresh_token:${decoded.userId}`);
+			// Remove from memory store
+			refreshTokens.delete(decoded.userId.toString());
 		}
 
-		res.clearCookie("accessToken");
-		res.clearCookie("refreshToken");
+		res.clearCookie("accessToken", {
+			httpOnly: true,
+			secure: process.env.NODE_ENV === "production",
+			sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+		});
+		res.clearCookie("refreshToken", {
+			httpOnly: true,
+			secure: process.env.NODE_ENV === "production",
+			sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+		});
 		res.json({ message: "Logged out successfully" });
 	} catch (error) {
 		console.log("Error in logout controller", error.message);
@@ -116,7 +126,7 @@ export const refreshToken = async (req, res) => {
 		}
 
 		const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-		const storedToken = await redis.get(`refresh_token:${decoded.userId}`);
+		const storedToken = refreshTokens.get(decoded.userId.toString());
 
 		if (storedToken !== refreshToken) {
 			return res.status(401).json({ message: "Invalid refresh token" });
@@ -127,7 +137,7 @@ export const refreshToken = async (req, res) => {
 		res.cookie("accessToken", accessToken, {
 			httpOnly: true,
 			secure: process.env.NODE_ENV === "production",
-			sameSite: "strict",
+			sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
 			maxAge: 15 * 60 * 1000,
 		});
 
@@ -140,8 +150,12 @@ export const refreshToken = async (req, res) => {
 
 export const getProfile = async (req, res) => {
 	try {
+		if (!req.user) {
+			return res.status(401).json({ message: "User not authenticated" });
+		}
 		res.json(req.user);
 	} catch (error) {
+		console.error("Error in getProfile controller:", error);
 		res.status(500).json({ message: "Server error", error: error.message });
 	}
 };

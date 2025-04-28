@@ -1,4 +1,3 @@
-import { redis } from "../lib/redis.js";
 import cloudinary from "../lib/cloudinary.js";
 import Product from "../models/product.model.js";
 
@@ -14,42 +13,11 @@ export const getAllProducts = async (req, res) => {
 
 export const getFeaturedProducts = async (req, res) => {
 	try {
-		let featuredProducts = await redis.get("featured_products");
-		
-		if (featuredProducts) {
-			try {
-				// Add error handling for JSON parsing
-				featuredProducts = JSON.parse(featuredProducts);
-				return res.json(featuredProducts);
-			} catch (parseError) {
-				console.log("Error parsing featured products from Redis:", parseError.message);
-				// If parsing fails, fetch from database instead
-				await redis.del("featured_products"); // Delete the invalid data
-			}
-		}
-
-		// If not in redis or parsing failed, fetch from mongodb
-		// .lean() returns a plain javascript object instead of a mongodb document
-		featuredProducts = await Product.find({ isFeatured: true }).lean();
+		// Simply fetch from database directly without Redis caching
+		const featuredProducts = await Product.find({ isFeatured: true }).lean();
 
 		if (!featuredProducts || featuredProducts.length === 0) {
-			return res.status(404).json({ message: "No featured products found" });
-		}
-
-		// Store in redis for future quick access
-		try {
-			// Make sure the data is valid before storing
-			const jsonData = JSON.stringify(featuredProducts);
-			// Test parse to ensure it's valid
-			JSON.parse(jsonData);
-			
-			// Store in Redis with expiration
-			await redis.set("featured_products", jsonData, {
-				ex: 60 * 60 * 24 // 24 hours expiration in seconds
-			});
-		} catch (error) {
-			console.log("Error storing featured products in Redis:", error.message);
-			// Continue without failing the request
+			return res.json([]); // Return empty array instead of error
 		}
 
 		res.json(featuredProducts);
@@ -152,7 +120,6 @@ export const toggleFeaturedProduct = async (req, res) => {
 		if (product) {
 			product.isFeatured = !product.isFeatured;
 			const updatedProduct = await product.save();
-			await updateFeaturedProductsCache();
 			res.json(updatedProduct);
 		} else {
 			res.status(404).json({ message: "Product not found" });
@@ -162,20 +129,3 @@ export const toggleFeaturedProduct = async (req, res) => {
 		res.status(500).json({ message: "Server error", error: error.message });
 	}
 };
-
-async function updateFeaturedProductsCache() {
-	try {
-		// The lean() method is used to return plain JavaScript objects instead of full Mongoose documents
-		const featuredProducts = await Product.find({ isFeatured: true }).lean();
-		
-		// Make sure the data is valid before storing
-		const jsonData = JSON.stringify(featuredProducts);
-		
-		// Store in Redis with expiration
-		await redis.set("featured_products", jsonData, {
-			ex: 60 * 60 * 24 // 24 hours expiration in seconds
-		});
-	} catch (error) {
-		console.log("Error in update cache function:", error.message);
-	}
-}
