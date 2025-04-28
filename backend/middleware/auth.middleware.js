@@ -3,7 +3,16 @@ import User from "../models/user.model.js";
 
 export const protectRoute = async (req, res, next) => {
   try {
-    const accessToken = req.cookies.accessToken;
+    // Try to get token from cookies OR Authorization header
+    let accessToken = req.cookies.accessToken;
+    
+    // If no cookie, check for token in Authorization header
+    if (!accessToken && req.headers.authorization) {
+      const authHeader = req.headers.authorization;
+      if (authHeader.startsWith("Bearer ")) {
+        accessToken = authHeader.substring(7);
+      }
+    }
 
     if (!accessToken) {
       return res.status(401).json({ message: "Unauthorized - No access token provided" });

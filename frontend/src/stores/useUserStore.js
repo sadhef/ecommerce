@@ -18,6 +18,15 @@ export const useUserStore = create((set, get) => ({
 
     try {
       const res = await axios.post("/auth/signup", { name, email, password });
+      
+      // Store tokens in localStorage for use with API calls
+      if (res.data.accessToken) {
+        localStorage.setItem('accessToken', res.data.accessToken);
+      }
+      if (res.data.refreshToken) {
+        localStorage.setItem('refreshToken', res.data.refreshToken);
+      }
+      
       set({ user: res.data, loading: false, error: null });
       toast.success("Signup successful!");
       return true;
@@ -34,6 +43,15 @@ export const useUserStore = create((set, get) => ({
 
     try {
       const res = await axios.post("/auth/login", { email, password });
+      
+      // Store tokens in localStorage for use with API calls
+      if (res.data.accessToken) {
+        localStorage.setItem('accessToken', res.data.accessToken);
+      }
+      if (res.data.refreshToken) {
+        localStorage.setItem('refreshToken', res.data.refreshToken);
+      }
+      
       set({ user: res.data, loading: false, error: null });
       toast.success("Login successful!");
       return true;
@@ -49,6 +67,11 @@ export const useUserStore = create((set, get) => ({
     set({ loading: true });
     try {
       await axios.post("/auth/logout");
+      
+      // Clear tokens from localStorage
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      
       set({ user: null, loading: false, error: null });
       toast.success("Logged out successfully");
       return true;
@@ -56,18 +79,32 @@ export const useUserStore = create((set, get) => ({
       const errorMessage = error.response?.data?.message || "An error occurred during logout";
       set({ loading: false, error: errorMessage });
       toast.error(errorMessage);
+      
+      // Still clear tokens and user state on client side even if server logout fails
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      set({ user: null });
+      
       return false;
     }
   },
 
   checkAuth: async () => {
     set({ checkingAuth: true });
+    
+    // Check if we have a token stored locally
+    const accessToken = localStorage.getItem('accessToken');
+    
+    if (!accessToken) {
+      set({ user: null, checkingAuth: false, error: null });
+      return false;
+    }
+    
     try {
       const response = await axios.get("/auth/profile");
       set({ user: response.data, checkingAuth: false, error: null });
       return true;
     } catch (error) {
-      // Don't show error toast for auth check - this is expected for non-logged in users
       console.log("Auth check: User not authenticated");
       set({ user: null, checkingAuth: false, error: null });
       return false;
@@ -79,11 +116,30 @@ export const useUserStore = create((set, get) => ({
     if (get().checkingAuth) return false;
 
     set({ checkingAuth: true });
+    
+    const refreshToken = localStorage.getItem('refreshToken');
+    
+    if (!refreshToken) {
+      set({ user: null, checkingAuth: false, error: "No refresh token" });
+      return false;
+    }
+    
     try {
-      const response = await axios.post("/auth/refresh-token");
+      const response = await axios.post("/auth/refresh-token", {}, {
+        headers: {
+          'X-Refresh-Token': refreshToken
+        }
+      });
+      
+      if (response.data.accessToken) {
+        localStorage.setItem('accessToken', response.data.accessToken);
+      }
+      
       set({ checkingAuth: false, error: null });
-      return response.data;
+      return true;
     } catch (error) {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       set({ user: null, checkingAuth: false, error: "Session expired" });
       return false;
     }
@@ -91,45 +147,3 @@ export const useUserStore = create((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
-
-// Axios interceptor for token refresh
-let refreshPromise = null;
-
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    
-    // If error is not 401 or we've already tried to refresh, just reject
-    if (error.response?.status !== 401 || originalRequest._retry) {
-      return Promise.reject(error);
-    }
-    
-    originalRequest._retry = true;
-
-    try {
-      // If a refresh is already in progress, wait for it to complete
-      if (refreshPromise) {
-        await refreshPromise;
-        return axios(originalRequest);
-      }
-
-      // Start a new refresh process
-      refreshPromise = useUserStore.getState().refreshToken();
-      const refreshResult = await refreshPromise;
-      refreshPromise = null;
-
-      if (refreshResult) {
-        return axios(originalRequest);
-      } else {
-        // If refresh fails, clear user state
-        useUserStore.getState().logout();
-        return Promise.reject(error);
-      }
-    } catch (refreshError) {
-      refreshPromise = null;
-      useUserStore.getState().logout();
-      return Promise.reject(refreshError);
-    }
-  }
-);
