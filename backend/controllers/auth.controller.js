@@ -1,4 +1,3 @@
-import { redis } from "../lib/redis.js";
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 
@@ -14,11 +13,9 @@ const generateTokens = (userId) => {
 	return { accessToken, refreshToken };
 };
 
+// Instead of storing in Redis, store the token in the User model
 const storeRefreshToken = async (userId, refreshToken) => {
-	// Updated for @upstash/redis: use object syntax for expiration
-	await redis.set(`refresh_token:${userId}`, refreshToken, {
-		ex: 7 * 24 * 60 * 60 // 7 days in seconds
-	});
+	await User.findByIdAndUpdate(userId, { refreshToken });
 };
 
 const setCookies = (res, accessToken, refreshToken) => {
@@ -94,7 +91,8 @@ export const logout = async (req, res) => {
 		const refreshToken = req.cookies.refreshToken;
 		if (refreshToken) {
 			const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-			await redis.del(`refresh_token:${decoded.userId}`);
+			// Remove token from user document instead of Redis
+			await User.findByIdAndUpdate(decoded.userId, { refreshToken: null });
 		}
 
 		res.clearCookie("accessToken");
@@ -116,9 +114,10 @@ export const refreshToken = async (req, res) => {
 		}
 
 		const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-		const storedToken = await redis.get(`refresh_token:${decoded.userId}`);
-
-		if (storedToken !== refreshToken) {
+		
+		// Find user and check if refresh token matches
+		const user = await User.findById(decoded.userId);
+		if (!user || user.refreshToken !== refreshToken) {
 			return res.status(401).json({ message: "Invalid refresh token" });
 		}
 

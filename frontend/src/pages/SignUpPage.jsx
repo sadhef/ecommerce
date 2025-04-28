@@ -27,7 +27,7 @@ const SignUpPage = () => {
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.8 }}
 			>
-				<h2 className='mt-6 text-center text-3xl font-extrabold text-emerald-400'>Create your account</h2>
+				<h2 className='mt-6 text-center text-3xl font-extrabold text-[#FF6B9C]'>Create your account</h2>
 			</motion.div>
 
 			<motion.div
@@ -36,15 +36,15 @@ const SignUpPage = () => {
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.8, delay: 0.2 }}
 			>
-				<div className='bg-gray-800 py-8 px-4 shadow sm:rounded-lg sm:px-10'>
+				<div className='bg-[#3D2A33] py-8 px-4 shadow sm:rounded-lg sm:px-10'>
 					<form onSubmit={handleSubmit} className='space-y-6'>
 						<div>
-							<label htmlFor='name' className='block text-sm font-medium text-gray-300'>
+							<label htmlFor='name' className='block text-sm font-medium text-pink-100'>
 								Full name
 							</label>
 							<div className='mt-1 relative rounded-md shadow-sm'>
 								<div className='absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none'>
-									<User className='h-5 w-5 text-gray-400' aria-hidden='true' />
+									<User className='h-5 w-5 text-pink-200' aria-hidden='true' />
 								</div>
 								<input
 									id='name'
@@ -52,20 +52,20 @@ const SignUpPage = () => {
 									required
 									value={formData.name}
 									onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-									className='block w-full px-3 py-2 pl-10 bg-gray-700 border border-gray-600 rounded-md shadow-sm
-									 placeholder-gray-400 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm'
+									className='block w-full px-3 py-2 pl-10 bg-[#2D1C24] border border-[#FF6B9C]/30 rounded-md shadow-sm
+									 placeholder-pink-300/50 focus:outline-none focus:ring-[#FF6B9C] focus:border-[#FF6B9C] sm:text-sm'
 									placeholder='John Doe'
 								/>
 							</div>
 						</div>
 
 						<div>
-							<label htmlFor='email' className='block text-sm font-medium text-gray-300'>
+							<label htmlFor='email' className='block text-sm font-medium text-pink-100'>
 								Email address
 							</label>
 							<div className='mt-1 relative rounded-md shadow-sm'>
 								<div className='absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none'>
-									<Mail className='h-5 w-5 text-gray-400' aria-hidden='true' />
+									<Mail className='h-5 w-5 text-pink-200' aria-hidden='true' />
 								</div>
 								<input
 									id='email'
@@ -73,22 +73,22 @@ const SignUpPage = () => {
 									required
 									value={formData.email}
 									onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-									className=' block w-full px-3 py-2 pl-10 bg-gray-700 border border-gray-600 
+									className='block w-full px-3 py-2 pl-10 bg-[#2D1C24] border border-[#FF6B9C]/30 
 									rounded-md shadow-sm
-									 placeholder-gray-400 focus:outline-none focus:ring-emerald-500 
-									 focus:border-emerald-500 sm:text-sm'
+									 placeholder-pink-300/50 focus:outline-none focus:ring-[#FF6B9C] 
+									 focus:border-[#FF6B9C] sm:text-sm'
 									placeholder='you@example.com'
 								/>
 							</div>
 						</div>
 
 						<div>
-							<label htmlFor='password' className='block text-sm font-medium text-gray-300'>
+							<label htmlFor='password' className='block text-sm font-medium text-pink-100'>
 								Password
 							</label>
 							<div className='mt-1 relative rounded-md shadow-sm'>
 								<div className='absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none'>
-									<Lock className='h-5 w-5 text-gray-400' aria-hidden='true' />
+									<Lock className='h-5 w-5 text-pink-200' aria-hidden='true' />
 								</div>
 								<input
 									id='password'
@@ -96,20 +96,20 @@ const SignUpPage = () => {
 									required
 									value={formData.password}
 									onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-									className=' block w-full px-3 py-2 pl-10 bg-gray-700 border border-gray-600 
-									rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm'
+									className='block w-full px-3 py-2 pl-10 bg-[#2D1C24] border border-[#FF6B9C]/30 
+									rounded-md shadow-sm placeholder-pink-300/50 focus:outline-none focus:ring-[#FF6B9C] focus:border-[#FF6B9C] sm:text-sm'
 									placeholder='••••••••'
 								/>
 							</div>
 						</div>
 
 						<div>
-							<label htmlFor='confirmPassword' className='block text-sm font-medium text-gray-300'>
+							<label htmlFor='confirmPassword' className='block text-sm font-medium text-pink-100'>
 								Confirm Password
 							</label>
 							<div className='mt-1 relative rounded-md shadow-sm'>
 								<div className='absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none'>
-									<Lock className='h-5 w-5 text-gray-400' aria-hidden='true' />
+									<Lock className='h-5 w-5 text-pink-200' aria-hidden='true' />
 								</div>
 								<input
 									id='confirmPassword'
@@ -117,8 +117,8 @@ const SignUpPage = () => {
 									required
 									value={formData.confirmPassword}
 									onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-									className=' block w-full px-3 py-2 pl-10 bg-gray-700 border
-									 border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm'
+									className='block w-full px-3 py-2 pl-10 bg-[#2D1C24] border
+									 border-[#FF6B9C]/30 rounded-md shadow-sm placeholder-pink-300/50 focus:outline-none focus:ring-[#FF6B9C] focus:border-[#FF6B9C] sm:text-sm'
 									placeholder='••••••••'
 								/>
 							</div>
@@ -127,9 +127,9 @@ const SignUpPage = () => {
 						<button
 							type='submit'
 							className='w-full flex justify-center py-2 px-4 border border-transparent 
-							rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600
-							 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2
-							  focus:ring-emerald-500 transition duration-150 ease-in-out disabled:opacity-50'
+							rounded-md shadow-sm text-sm font-medium text-white bg-[#E84D8A]
+							 hover:bg-[#FF6B9C] focus:outline-none focus:ring-2 focus:ring-offset-2
+							  focus:ring-[#FF6B9C] transition duration-150 ease-in-out disabled:opacity-50'
 							disabled={loading}
 						>
 							{loading ? (
@@ -146,9 +146,9 @@ const SignUpPage = () => {
 						</button>
 					</form>
 
-					<p className='mt-8 text-center text-sm text-gray-400'>
+					<p className='mt-8 text-center text-sm text-pink-200'>
 						Already have an account?{" "}
-						<Link to='/login' className='font-medium text-emerald-400 hover:text-emerald-300'>
+						<Link to='/login' className='font-medium text-[#FF6B9C] hover:text-[#FFA5C3]'>
 							Login here <ArrowRight className='inline h-4 w-4' />
 						</Link>
 					</p>

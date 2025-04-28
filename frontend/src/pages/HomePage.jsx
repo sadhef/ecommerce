@@ -22,17 +22,20 @@ const HomePage = () => {
 
 	return (
 		<div className='relative min-h-screen text-white overflow-hidden'>
-			<div className='relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16'>
-				<h1 className='text-center text-5xl sm:text-6xl font-bold text-emerald-400 mb-4'>
-					Explore Our Categories
+			<div className='relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10'>
+				<h1 className='text-center text-4xl sm:text-5xl font-bold text-[#FF6B9C] mb-3'>
+					Welcome to Ri-Carts
 				</h1>
-				<p className='text-center text-xl text-gray-300 mb-12'>
-					Discover the latest trends in eco-friendly fashion
+				<p className='text-center text-lg text-pink-100 mb-8'>
+					Discover the latest trends in fashion
 				</p>
 
-				<div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'>
+				<h2 className='text-center text-2xl sm:text-3xl font-bold text-[#FF6B9C] mb-4'>
+					Browse Categories
+				</h2>
+				<div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3'>
 					{categories.map((category) => (
-						<CategoryItem category={category} key={category.name} />
+						<CategoryItem category={category} key={category.name} compact={true} />
 					))}
 				</div>
 
