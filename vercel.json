@@ -1,12 +1,16 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
-  "installCommand": "npm install",
-  "outputDirectory": "frontend/dist",
   "builds": [
     {
       "src": "backend/server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
     }
   ],
   "routes": [
@@ -15,11 +19,12 @@
       "dest": "backend/server.js"
     },
     {
+      "src": "/(.*\\.(js|css|png|jpg|jpeg|svg|ico)$)",
+      "dest": "frontend/dist/$1"
+    },
+    {
       "src": "/(.*)",
       "dest": "frontend/dist/index.html"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
