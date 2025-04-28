@@ -19,18 +19,12 @@ export const useUserStore = create((set, get) => ({
       return false;
     }
 
-    if (password.length < 6) {
-      set({ loading: false, error: "Password must be at least 6 characters" });
-      toast.error("Password must be at least 6 characters");
-      return false;
-    }
-
     try {
       const res = await axios.post("/auth/signup", { name, email, password });
       
       // Store token in localStorage as backup auth method
       if (res.data.accessToken) {
-        localStorage.setItem('accessToken', res.data.accessToken);
+        localStorage.setItem("accessToken", res.data.accessToken);
       }
       
       set({ 
@@ -61,7 +55,7 @@ export const useUserStore = create((set, get) => ({
       
       // Store token in localStorage as backup auth method
       if (res.data.accessToken) {
-        localStorage.setItem('accessToken', res.data.accessToken);
+        localStorage.setItem("accessToken", res.data.accessToken);
       }
       
       set({ 
@@ -97,7 +91,7 @@ export const useUserStore = create((set, get) => ({
       await axios.post("/auth/logout");
       
       // Clear token from localStorage
-      localStorage.removeItem('accessToken');
+      localStorage.removeItem("accessToken");
       
       set({ 
         user: null, 
@@ -110,7 +104,7 @@ export const useUserStore = create((set, get) => ({
       return true;
     } catch (error) {
       // Even if server-side logout fails, clear local state
-      localStorage.removeItem('accessToken');
+      localStorage.removeItem("accessToken");
       
       set({ 
         user: null, 
@@ -149,7 +143,7 @@ export const useUserStore = create((set, get) => ({
       console.log("Auth check: User not authenticated");
       
       // Clear any stored tokens if auth check fails
-      localStorage.removeItem('accessToken');
+      localStorage.removeItem("accessToken");
       
       set({ 
         user: null, 
@@ -171,7 +165,7 @@ export const useUserStore = create((set, get) => ({
       const response = await axios.post("/auth/refresh-token");
       
       if (response.data?.accessToken) {
-        localStorage.setItem('accessToken', response.data.accessToken);
+        localStorage.setItem("accessToken", response.data.accessToken);
       }
       
       set({ 
@@ -182,7 +176,7 @@ export const useUserStore = create((set, get) => ({
       
       return response.data;
     } catch (error) {
-      localStorage.removeItem('accessToken');
+      localStorage.removeItem("accessToken");
       
       set({ 
         user: null, 
@@ -196,4 +190,4 @@ export const useUserStore = create((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
-});
+}));

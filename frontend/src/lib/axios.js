@@ -31,7 +31,7 @@ axiosInstance.interceptors.request.use(
   (config) => {
     // Add authorization header if we have a token in localStorage
     // This is a backup approach in case cookies don't work
-    const accessToken = localStorage.getItem('accessToken');
+    const accessToken = localStorage.getItem("accessToken");
     if (accessToken && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
@@ -73,7 +73,7 @@ axiosInstance.interceptors.response.use(
         
         if (refreshResponse.data?.accessToken) {
           // Store the new token
-          localStorage.setItem('accessToken', refreshResponse.data.accessToken);
+          localStorage.setItem("accessToken", refreshResponse.data.accessToken);
           
           // Update the authorization header
           axiosInstance.defaults.headers.common['Authorization'] = 
@@ -87,7 +87,7 @@ axiosInstance.interceptors.response.use(
         console.error('Token refresh failed:', refreshError);
         
         // Clear any stored auth data
-        localStorage.removeItem('accessToken');
+        localStorage.removeItem("accessToken");
         
         // Show login required toast once
         toast.error('Session expired. Please login again.', {
