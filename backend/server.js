@@ -36,6 +36,11 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
+// Simple route to verify API is working
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ message: 'API is running' });
+});
+
 // API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
@@ -48,13 +53,24 @@ app.use("/api/analytics", analyticsRoutes);
 if (process.env.NODE_ENV === "production") {
   // Set static folder
   const frontendBuildPath = path.resolve(__dirname, '../frontend/dist');
+  
+  // Serve static files
   app.use(express.static(frontendBuildPath));
-
-  // Any route that is not an API route will be redirected to the index.html
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(frontendBuildPath, 'index.html'));
+  
+  // Handle SPA routing - redirect all non-API routes to React app
+  app.get('*', (req, res) => {
+    // Only handle non-API routes with the frontend
+    if (!req.path.startsWith('/api/')) {
+      res.sendFile(path.resolve(frontendBuildPath, 'index.html'));
+    }
   });
 }
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Something went wrong on the server!', error: err.message });
+});
 
 // Start server
 const startServer = async () => {
@@ -71,7 +87,10 @@ const startServer = async () => {
   }
 };
 
-startServer();
+// Run the server if this file is executed directly
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
 
 // For Vercel serverless functions
 export default app;

@@ -8,7 +8,8 @@
       "install-server": "cd backend && npm install",
       "install-client": "cd frontend && npm install",
       "install": "npm run install-server && npm run install-client",
-      "build": "cd frontend && npm run build",
+      "build-client": "cd frontend && npm run build",
+      "build": "npm run build-client",
       "dev-server": "cd backend && npm run dev",
       "dev-client": "cd frontend && npm run dev",
       "dev": "concurrently \"npm run dev-server\" \"npm run dev-client\""
