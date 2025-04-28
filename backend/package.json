@@ -1,14 +1,15 @@
 {
 	"name": "e-commerce-store",
 	"version": "1.0.0",
-	"description": "",
+	"description": "Fashion e-commerce platform",
 	"main": "server.js",
 	"scripts": {
 	  "dev": "nodemon server.js",
 	  "start": "node server.js",
-	  "build": "npm install && npm install --prefix frontend && npm run build --prefix frontend"
+	  "build": "echo 'Backend build step complete'",
+	  "vercel-build": "echo 'Vercel backend build complete'"
 	},
-	"keywords": [],
+	"keywords": ["ecommerce", "fashion", "online-store"],
 	"author": "",
 	"type": "module",
 	"license": "ISC",
@@ -24,5 +25,8 @@
 	},
 	"devDependencies": {
 	  "nodemon": "^3.1.4"
+	},
+	"engines": {
+	  "node": ">=16.0.0"
 	}
-}
+  }

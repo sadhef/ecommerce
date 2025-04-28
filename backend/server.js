@@ -22,23 +22,30 @@ const PORT = process.env.PORT || 5000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Configure middleware
 app.use(express.json({ limit: "10mb" })); // allows you to parse the body of the request
 app.use(cookieParser());
 
-// CORS configuration for development
+// CORS configuration
 if (process.env.NODE_ENV !== "production") {
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
     res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      return res.status(204).end();
+    }
+    
     next();
   });
 }
 
-// Simple route to verify API is working
+// Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ message: 'API is running' });
+  res.status(200).json({ message: 'API is running', environment: process.env.NODE_ENV });
 });
 
 // API routes
@@ -62,9 +69,17 @@ if (process.env.NODE_ENV === "production") {
     // Only handle non-API routes with the frontend
     if (!req.path.startsWith('/api/')) {
       res.sendFile(path.resolve(frontendBuildPath, 'index.html'));
+    } else {
+      // If API route not found, return 404
+      res.status(404).json({ message: 'API endpoint not found' });
     }
   });
 }
+
+// Catch-all for API 404s
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ message: 'API endpoint not found' });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
