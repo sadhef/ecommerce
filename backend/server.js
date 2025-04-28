@@ -34,24 +34,28 @@ const PORT = process.env.PORT || 5000;
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// CORS configuration
+// CORS configuration - UPDATED TO ALLOW ALL ORIGINS FOR NOW
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow all origins in development or if no origin (like Postman requests)
+    // Allow all origins in development
     if (!origin || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
     
-    // Define allowed origins for production
+    // List all possible frontend URLs - MAKE SURE YOUR ACTUAL FRONTEND URL IS HERE
     const allowedOrigins = [
+      'https://ri-cart.vercel.app',
       'https://ri-carts.vercel.app',
+      'https://ecommerce-h3q3.vercel.app',
       process.env.CLIENT_URL,
     ].filter(Boolean);
     
+    // Check if the origin is in the allowed list
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      // For deployment testing, allow all origins
+      // For debugging purposes - allow all origins temporarily
+      console.log(`Origin ${origin} not in allowed list ${allowedOrigins}, but allowing for debugging`);
       callback(null, true);
     }
   },
@@ -62,6 +66,15 @@ app.use(cors({
 
 // Add preflight response for OPTIONS requests
 app.options('*', cors());
+
+// Add explicit CORS headers for all routes as a backup
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Refresh-Token');
+  next();
+});
 
 // Database connection middleware - verify connection before processing any request
 app.use(async (req, res, next) => {
@@ -138,6 +151,10 @@ app.use((err, req, res, next) => {
     'Database service unavailable. Please try again later.' : 
     'Something went wrong on the server!';
   
+  // Set CORS headers even in error responses
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   res.status(statusCode).json({ 
     message, 
     error: err.message,
@@ -148,6 +165,10 @@ app.use((err, req, res, next) => {
 
 // 404 handler
 app.use((req, res) => {
+  // Set CORS headers even in 404 responses
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   res.status(404).json({ message: 'API endpoint not found' });
 });
 

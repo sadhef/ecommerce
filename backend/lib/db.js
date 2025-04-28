@@ -5,14 +5,12 @@ let isConnected = false;
 
 // Connection options
 const connectionOptions = {
-  autoIndex: true,
-  maxPoolSize: 50,
-  minPoolSize: 10,
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  maxPoolSize: 10,
   socketTimeoutMS: 45000,
-  family: 4,
   serverSelectionTimeoutMS: 30000,
-  heartbeatFrequencyMS: 10000,
-  connectTimeoutMS: 30000
+  family: 4 // Use IPv4, skip trying IPv6
 };
 
 /**
@@ -33,6 +31,13 @@ export const connectDB = async () => {
     }
 
     console.log('Connecting to MongoDB...');
+    
+    // Debug the URI but hide password
+    const redactedUri = process.env.MONGO_URI.replace(
+      /:([^@]+)@/,
+      ':****@'
+    );
+    console.log(`Using MongoDB URI: ${redactedUri}`);
 
     // Connect with options
     const conn = await mongoose.connect(process.env.MONGO_URI, connectionOptions);
@@ -47,6 +52,16 @@ export const connectDB = async () => {
   } catch (error) {
     isConnected = false;
     console.error(`MongoDB connection error: ${error.message}`);
+    
+    // Provide more detailed error information
+    if (error.name === 'MongoServerSelectionError') {
+      console.error('MongoDB server selection error - check your connection string and network');
+    } else if (error.name === 'MongoParseError') {
+      console.error('MongoDB connection string parse error - check your URI format');
+    } else if (error.message.includes('Authentication failed')) {
+      console.error('MongoDB authentication failed - check your username and password');
+    }
+    
     throw error;
   }
 };
@@ -73,18 +88,6 @@ function setupConnectionEventListeners() {
   connection.on('error', (err) => {
     isConnected = false;
     console.error(`MongoDB connection error: ${err.message}`);
-  });
-  
-  // When the Node process ends, close the connection
-  process.on('SIGINT', async () => {
-    try {
-      await connection.close();
-      console.log('MongoDB connection closed due to app termination');
-      process.exit(0);
-    } catch (err) {
-      console.error('Error closing MongoDB connection:', err);
-      process.exit(1);
-    }
   });
 }
 
