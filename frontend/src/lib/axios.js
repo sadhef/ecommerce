@@ -12,18 +12,17 @@ const getBaseUrl = () => {
 
 const axiosInstance = axios.create({
   baseURL: getBaseUrl(),
-  withCredentials: true, // Send cookies for cross-site requests
   timeout: 15000, // Set a reasonable timeout
   headers: {
     'Content-Type': 'application/json',
   }
 });
 
-// Add request interceptor to attach token from localStorage if needed
+// Add request interceptor to attach token from localStorage
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Try to get token from localStorage as a fallback
-    const token = localStorage.getItem('accessToken');
+    // Get token from localStorage
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -61,6 +60,9 @@ axiosInstance.interceptors.response.use(
         if (!error.config.url.includes("/auth/profile")) {
           toast.error("Authentication failed. Please log in again.");
         }
+        
+        // Clear token on auth failure
+        localStorage.removeItem('token');
         break;
       case 403:
         toast.error("You don't have permission to perform this action.");

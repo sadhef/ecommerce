@@ -18,10 +18,9 @@ export const useUserStore = create((set, get) => ({
     try {
       const res = await axios.post("/auth/signup", { name, email, password });
       
-      // Store tokens in localStorage as a fallback
-      if (res.data.tokens) {
-        localStorage.setItem('accessToken', res.data.tokens.accessToken);
-        localStorage.setItem('refreshToken', res.data.tokens.refreshToken);
+      // Store token in localStorage
+      if (res.data.token) {
+        localStorage.setItem('token', res.data.token);
       }
       
       set({ user: res.data, loading: false });
@@ -37,10 +36,9 @@ export const useUserStore = create((set, get) => ({
     try {
       const res = await axios.post("/auth/login", { email, password });
       
-      // Store tokens in localStorage as a fallback
-      if (res.data.tokens) {
-        localStorage.setItem('accessToken', res.data.tokens.accessToken);
-        localStorage.setItem('refreshToken', res.data.tokens.refreshToken);
+      // Store token in localStorage
+      if (res.data.token) {
+        localStorage.setItem('token', res.data.token);
       }
 
       set({ user: res.data, loading: false });
@@ -52,90 +50,43 @@ export const useUserStore = create((set, get) => ({
 
   logout: async () => {
     try {
-      await axios.post("/auth/logout");
+      // First try to log out on the server (if we're authenticated)
+      try {
+        await axios.post("/auth/logout");
+      } catch (error) {
+        // Continue with local logout even if server logout fails
+        console.log("Server logout failed, continuing with local logout");
+      }
       
-      // Clear tokens from localStorage
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      // Remove token from localStorage
+      localStorage.removeItem('token');
       
       set({ user: null });
     } catch (error) {
-      toast.error(error.response?.data?.message || "An error occurred during logout");
+      toast.error("Failed to log out properly");
     }
   },
 
   checkAuth: async () => {
     set({ checkingAuth: true });
+    
+    // First check if we have a token in localStorage
+    const token = localStorage.getItem('token');
+    if (!token) {
+      set({ checkingAuth: false, user: null });
+      return;
+    }
+    
     try {
       const response = await axios.get("/auth/profile");
       set({ user: response.data, checkingAuth: false });
     } catch (error) {
       console.log("Auth check failed:", error.message);
+      
+      // Clear invalid token
+      localStorage.removeItem('token');
+      
       set({ checkingAuth: false, user: null });
     }
-  },
-
-  refreshToken: async () => {
-    // Prevent multiple simultaneous refresh attempts
-    if (get().checkingAuth) return;
-
-    set({ checkingAuth: true });
-    try {
-      // Try to use the refresh token from localStorage as fallback
-      const storedRefreshToken = localStorage.getItem('refreshToken');
-      
-      const response = await axios.post("/auth/refresh-token", 
-        storedRefreshToken ? { refreshToken: storedRefreshToken } : {}
-      );
-      
-      // Update accessToken in localStorage if it was returned
-      if (response.data.accessToken) {
-        localStorage.setItem('accessToken', response.data.accessToken);
-      }
-      
-      set({ checkingAuth: false });
-      return response.data;
-    } catch (error) {
-      set({ user: null, checkingAuth: false });
-      
-      // Clear tokens from localStorage on refresh failure
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      
-      throw error;
-    }
-  },
-}));
-
-// Axios interceptor for token refresh
-let refreshPromise = null;
-
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        // If a refresh is already in progress, wait for it to complete
-        if (refreshPromise) {
-          await refreshPromise;
-          return axios(originalRequest);
-        }
-
-        // Start a new refresh process
-        refreshPromise = useUserStore.getState().refreshToken();
-        await refreshPromise;
-        refreshPromise = null;
-
-        return axios(originalRequest);
-      } catch (refreshError) {
-        // If refresh fails, redirect to login or handle as needed
-        useUserStore.getState().logout();
-        return Promise.reject(refreshError);
-      }
-    }
-    return Promise.reject(error);
   }
-);
+}));

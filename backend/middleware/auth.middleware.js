@@ -3,26 +3,16 @@ import User from "../models/user.model.js";
 
 export const protectRoute = async (req, res, next) => {
   try {
-    // Log cookies for debugging (optional, remove in production)
-    console.log("Cookies received:", req.cookies);
-    
-    // Try to get token from cookies first
-    let accessToken = req.cookies.accessToken;
-    
-    // If no cookie token, check Authorization header
-    if (!accessToken && req.headers.authorization) {
-      const authHeader = req.headers.authorization;
-      if (authHeader.startsWith('Bearer ')) {
-        accessToken = authHeader.substring(7);
-      }
+    // Get token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: "Unauthorized - Token required" });
     }
-
-    if (!accessToken) {
-      return res.status(401).json({ message: "Unauthorized - No access token provided" });
-    }
+    
+    const token = authHeader.split(' ')[1];
 
     try {
-      const decoded = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
+      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
       const user = await User.findById(decoded.userId).select("-password");
 
       if (!user) {
@@ -33,10 +23,7 @@ export const protectRoute = async (req, res, next) => {
       next();
     } catch (error) {
       console.log("Token verification error:", error.message);
-      if (error.name === "TokenExpiredError") {
-        return res.status(401).json({ message: "Unauthorized - Access token expired" });
-      }
-      return res.status(401).json({ message: "Invalid token" });
+      return res.status(401).json({ message: "Invalid or expired token" });
     }
   } catch (error) {
     console.log("Error in protectRoute middleware", error.message);
