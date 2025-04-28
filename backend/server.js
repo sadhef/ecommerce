@@ -18,10 +18,12 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const __dirname = path.resolve();
 
-// Simplest CORS setup
+// CORS setup for cross-origin requests
 app.use(cors({
   origin: ["https://ri-cart.vercel.app", "http://localhost:5173"],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Handle preflight requests
@@ -30,23 +32,26 @@ app.options('*', cors({
   credentials: true
 }));
 
-// Basic middleware
+// For parsing JSON and cookies
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// Minimal error-catching middleware
+// Additional headers for cross-origin cookies
 app.use((req, res, next) => {
-  try {
-    next();
-  } catch (error) {
-    console.error("Global middleware error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  // Set the appropriate origin based on the request
+  const origin = req.headers.origin;
+  if (origin === 'https://ri-cart.vercel.app' || origin === 'http://localhost:5173') {
+    res.header('Access-Control-Allow-Origin', origin);
   }
+  
+  next();
 });
 
-// Simple health check
+// Simple health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ status: 'ok', environment: process.env.NODE_ENV });
 });
 
 // API routes
@@ -62,7 +67,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.log("MongoDB connection error:", err));
 
-// Static files in production
+// Serve static files in production
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "/frontend/dist")));
   
@@ -80,7 +85,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Only start server if not in Vercel (Vercel uses the export)
+// Start server or export for serverless
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

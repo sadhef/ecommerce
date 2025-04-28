@@ -17,11 +17,12 @@ const generateTokens = (userId) => {
 };
 
 const setCookies = (res, accessToken, refreshToken) => {
-  // For cross-origin cookies in production
+  // Common options for cross-origin cookies
   const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: true, // Always use secure in production with Vercel
+    sameSite: 'none', // Critical for cross-origin cookies
+    path: '/',
     maxAge: 15 * 60 * 1000, // 15 minutes
   };
 
@@ -55,10 +56,15 @@ export const signup = async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      // Include tokens in response for local storage option
+      tokens: {
+        accessToken,
+        refreshToken
+      }
     });
   } catch (error) {
     console.log("Error in signup controller", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: error.message });
   }
 };
 
@@ -78,13 +84,18 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        // Include tokens in response for local storage option
+        tokens: {
+          accessToken,
+          refreshToken
+        }
       });
     } else {
       res.status(400).json({ message: "Invalid email or password" });
     }
   } catch (error) {
     console.log("Error in login controller", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: error.message });
   }
 };
 
@@ -100,11 +111,14 @@ export const logout = async (req, res) => {
       }
     }
 
+    // Also clear token from localStorage on client side
+    
     // Clear cookies with appropriate options for cross-origin
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: true,
+      sameSite: 'none',
+      path: '/'
     };
 
     res.clearCookie("accessToken", cookieOptions);
@@ -119,7 +133,7 @@ export const logout = async (req, res) => {
 
 export const refreshToken = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken;
+    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
     if (!refreshToken) {
       return res.status(401).json({ message: "No refresh token provided" });
@@ -128,7 +142,10 @@ export const refreshToken = async (req, res) => {
     const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
     const storedToken = refreshTokens.get(decoded.userId.toString());
 
-    if (storedToken !== refreshToken) {
+    // Skip token verification in memory if not found (for development)
+    if (!storedToken && process.env.NODE_ENV !== 'production') {
+      console.log("Refresh token not found in memory, but proceeding for development");
+    } else if (storedToken !== refreshToken && process.env.NODE_ENV === 'production') {
       return res.status(401).json({ message: "Invalid refresh token" });
     }
 
@@ -141,12 +158,16 @@ export const refreshToken = async (req, res) => {
     // Set the new access token as a cookie
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: true,
+      sameSite: 'none',
+      path: '/',
       maxAge: 15 * 60 * 1000,
     });
 
-    res.json({ message: "Token refreshed successfully" });
+    res.json({ 
+      message: "Token refreshed successfully",
+      accessToken // Include in response body for localStorage option
+    });
   } catch (error) {
     console.log("Error in refreshToken controller", error);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -163,4 +184,9 @@ export const getProfile = async (req, res) => {
     console.log("Error in getProfile controller", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
+};
+
+// Simple test endpoint to verify auth routes are working
+export const testAuth = async (req, res) => {
+  res.json({ message: "Auth endpoint working correctly" });
 };
