@@ -1,37 +1,46 @@
-/**
- * Custom CORS middleware for handling cross-origin requests
- * with proper credential handling for deployed environments
- */
+import jwt from "jsonwebtoken";
+import User from "../models/user.model.js";
 
-export const corsMiddleware = (req, res, next) => {
-	// Get allowed origins from environment variable or use defaults
-	const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || 'https://ri-cart.vercel.app,http://localhost:5173';
-	const allowedOrigins = allowedOriginsEnv.split(',');
-	
-	const origin = req.headers.origin;
-	
-	// Specific origin for credential requests
-	if (origin && allowedOrigins.includes(origin)) {
-	  res.setHeader('Access-Control-Allow-Origin', origin);
-	  res.setHeader('Access-Control-Allow-Credentials', 'true');
-	} else if (process.env.NODE_ENV === 'development') {
-	  // In development, log if origin is not allowed
-	  if (origin) {
-		console.log(`Origin not allowed by CORS: ${origin}`);
-	  }
-	}
-	
-	// Set headers for all responses
-	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-	res.setHeader('Access-Control-Allow-Headers', 
-	  'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Refresh-Token');
-	
-	// Handle preflight requests
-	if (req.method === 'OPTIONS') {
-	  return res.status(200).end();
-	}
-	
-	return next();
-  };
-  
-  export default corsMiddleware;
+export const protectRoute = async (req, res, next) => {
+  try {
+    const accessToken = req.cookies.accessToken;
+
+    if (!accessToken) {
+      return res.status(401).json({ message: "Unauthorized - No access token provided" });
+    }
+
+    try {
+      const decoded = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
+      const user = await User.findById(decoded.userId).select("-password");
+
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      req.user = user;
+      next();
+    } catch (error) {
+      console.log("Token verification error:", error.message);
+      if (error.name === "TokenExpiredError") {
+        return res.status(401).json({ message: "Unauthorized - Access token expired" });
+      }
+      return res.status(401).json({ message: "Invalid token" });
+    }
+  } catch (error) {
+    console.log("Error in protectRoute middleware", error.message);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const adminRoute = (req, res, next) => {
+  try {
+    if (req.user && req.user.role === "admin") {
+      next();
+    } else {
+      return res.status(403).json({ message: "Access denied - Admin only" });
+    }
+  } catch (error) {
+    console.log("Error in adminRoute middleware", error.message);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
