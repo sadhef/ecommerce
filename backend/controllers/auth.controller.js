@@ -19,18 +19,21 @@ const storeRefreshToken = async (userId, refreshToken) => {
 };
 
 const setCookies = (res, accessToken, refreshToken) => {
-	res.cookie("accessToken", accessToken, {
-		httpOnly: true, // prevent XSS attacks, cross site scripting attack
+	// For Vercel deployment with separate frontend/backend
+	const cookieOptions = {
+		httpOnly: true,
 		secure: process.env.NODE_ENV === "production",
-		sameSite: "strict", // prevents CSRF attack, cross-site request forgery attack
+		sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", // Use 'none' for cross-domain in production
 		maxAge: 15 * 60 * 1000, // 15 minutes
-	});
-	res.cookie("refreshToken", refreshToken, {
-		httpOnly: true, // prevent XSS attacks, cross site scripting attack
-		secure: process.env.NODE_ENV === "production",
-		sameSite: "strict", // prevents CSRF attack, cross-site request forgery attack
+	};
+
+	const refreshCookieOptions = {
+		...cookieOptions,
 		maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-	});
+	};
+
+	res.cookie("accessToken", accessToken, cookieOptions);
+	res.cookie("refreshToken", refreshToken, refreshCookieOptions);
 };
 
 export const signup = async (req, res) => {
@@ -95,8 +98,15 @@ export const logout = async (req, res) => {
 			await User.findByIdAndUpdate(decoded.userId, { refreshToken: null });
 		}
 
-		res.clearCookie("accessToken");
-		res.clearCookie("refreshToken");
+		// Clear cookies with appropriate settings for cross-domain
+		const cookieOptions = {
+			httpOnly: true,
+			secure: process.env.NODE_ENV === "production",
+			sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+		};
+
+		res.clearCookie("accessToken", cookieOptions);
+		res.clearCookie("refreshToken", cookieOptions);
 		res.json({ message: "Logged out successfully" });
 	} catch (error) {
 		console.log("Error in logout controller", error.message);
@@ -123,12 +133,15 @@ export const refreshToken = async (req, res) => {
 
 		const accessToken = jwt.sign({ userId: decoded.userId }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
 
-		res.cookie("accessToken", accessToken, {
+		// Set cookie with appropriate settings for cross-domain
+		const cookieOptions = {
 			httpOnly: true,
 			secure: process.env.NODE_ENV === "production",
-			sameSite: "strict",
-			maxAge: 15 * 60 * 1000,
-		});
+			sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+			maxAge: 15 * 60 * 1000, // 15 minutes
+		};
+
+		res.cookie("accessToken", accessToken, cookieOptions);
 
 		res.json({ message: "Token refreshed successfully" });
 	} catch (error) {

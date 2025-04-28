@@ -22,49 +22,67 @@ const PORT = process.env.PORT || 5000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.use(express.json({ limit: "10mb" })); // allows you to parse the body of the request
+app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// CORS configuration for development
-if (process.env.NODE_ENV !== "production") {
-  app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+// CORS configuration for Vercel deployment
+app.use((req, res, next) => {
+  // Get the origin of the request
+  const origin = req.headers.origin;
+  
+  // Allow requests from frontend URL in production, or localhost in development
+  const frontendUrl = process.env.NODE_ENV === 'production' 
+    ? process.env.CLIENT_URL 
+    : 'http://localhost:5173';
+  
+  if (origin === frontendUrl) {
+    res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    next();
-  });
-}
+  }
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
 
 // Simple route to verify API is working
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
   res.status(200).json({ message: 'API is running' });
 });
 
-// API routes
-app.use("/api/auth", authRoutes);
-app.use("/api/products", productRoutes);
-app.use("/api/cart", cartRoutes);
-app.use("/api/coupons", couponRoutes);
-app.use("/api/payments", paymentRoutes);
-app.use("/api/analytics", analyticsRoutes);
+// API routes - no /api prefix since the entire backend is the API
+app.use("/auth", authRoutes);
+app.use("/products", productRoutes);
+app.use("/cart", cartRoutes);
+app.use("/coupons", couponRoutes);
+app.use("/payments", paymentRoutes);
+app.use("/analytics", analyticsRoutes);
 
-// Serve static files if in production
-if (process.env.NODE_ENV === "production") {
-  // Set static folder
-  const frontendBuildPath = path.resolve(__dirname, '../frontend/dist');
+// Connect to MongoDB (with connection reuse for serverless)
+let isConnected = false;
+
+const connectToDatabase = async (req, res, next) => {
+  if (isConnected) {
+    return next();
+  }
   
-  // Serve static files
-  app.use(express.static(frontendBuildPath));
-  
-  // Handle SPA routing - redirect all non-API routes to React app
-  app.get('*', (req, res) => {
-    // Only handle non-API routes with the frontend
-    if (!req.path.startsWith('/api/')) {
-      res.sendFile(path.resolve(frontendBuildPath, 'index.html'));
-    }
-  });
-}
+  try {
+    await connectDB();
+    isConnected = true;
+    return next();
+  } catch (error) {
+    console.error("Error connecting to database:", error);
+    return res.status(500).json({ error: "Database connection failed" });
+  }
+};
+
+// Apply database connection middleware to all routes
+app.use(connectToDatabase);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -72,25 +90,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong on the server!', error: err.message });
 });
 
-// Start server
-const startServer = async () => {
-  try {
-    await connectDB();
-    console.log("MongoDB connected successfully");
-    
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  } catch (error) {
-    console.error("Failed to start server:", error);
-    process.exit(1);
-  }
-};
-
-// Run the server if this file is executed directly
-if (process.env.NODE_ENV !== 'test') {
-  startServer();
+// Start server for development
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 }
 
-// For Vercel serverless functions
+// For Vercel serverless deployment
 export default app;

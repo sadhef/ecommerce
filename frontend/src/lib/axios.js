@@ -1,14 +1,14 @@
 import axios from "axios";
 
-// Create a base URL that works in both development and production
+// Create a base URL that points to the backend API
 const baseURL = import.meta.env.PROD 
-  ? '/api'  // In production, use relative path
-  : 'http://localhost:5000/api';  // In development, use the full URL
+  ? import.meta.env.VITE_API_URL || 'https://ri-cart.vercel.app'  // Production backend URL
+  : 'http://localhost:5000';  // Development backend URL
 
 const axiosInstance = axios.create({
   baseURL,
   withCredentials: true, // send cookies to the server
-  timeout: 10000, // 10 seconds timeout
+  timeout: 15000, // 15 seconds timeout (increased for serverless cold starts)
 });
 
 // Add a response interceptor to handle common errors
